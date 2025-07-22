@@ -310,7 +310,7 @@ def extract_pdf_content(pdf_path: str, output_dir: Optional[str] = None) -> Dict
 
 if __name__ == "__main__":
     # Example usage
-    pdf_path = "../data/hsc26.pdf"
+    pdf_path = "../data/HSC26-Bangla1st-Paper.pdf"
     
     if os.path.exists(pdf_path):
         try:

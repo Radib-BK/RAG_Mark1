@@ -627,31 +627,84 @@ class RAGEvaluator:
         
         logger.info(f"Evaluation results saved to {output_path}")
 
-def create_sample_test_set() -> List[Dict[str, Any]]:
-    """Create a sample test set for demonstration"""
+def create_hsc_bangla_test_set() -> List[Dict[str, Any]]:
+    """Create HSC Bangla literature test set based on actual textbook content"""
     return [
         {
             "id": "test_001",
-            "question": "বাংলাদেশের রাজধানী কী?",
-            "answer": "বাংলাদেশের রাজধানী ঢাকা।",
+            "question": "অনুপমের বয়স কত বছর?",
+            "answer": "অনুপমের বয়স সাতাশ বছর।",
             "language": "bn",
-            "relevant_chunks": ["chunk_dhaka_1", "chunk_capital_1"]
+            "relevant_chunks": ["page_1_para_1", "page_1_mcq_1"]
         },
         {
-            "id": "test_002", 
-            "question": "What is the capital of Bangladesh?",
-            "answer": "The capital of Bangladesh is Dhaka.",
-            "language": "en",
-            "relevant_chunks": ["chunk_dhaka_1", "chunk_capital_1"]
+            "id": "test_002",
+            "question": "'অপরিচিতা' গল্পে অনুপমের চাচার সাথে কোন চরিত্রের মিল রয়েছে?",
+            "answer": "'অপরিচিতা' গল্পে অনুপমের চাচার সাথে মামার চরিত্রের মিল রয়েছে।",
+            "language": "bn", 
+            "relevant_chunks": ["page_1_mcq_3", "page_2_paragraph_1"]
         },
         {
             "id": "test_003",
-            "question": "HSC পরীক্ষা কখন হয়?",
-            "answer": "HSC পরীক্ষা সাধারণত এপ্রিল-মে মাসে অনুষ্ঠিত হয়।",
+            "question": "What is the main theme of 'Aparichita' story?",
+            "answer": "The main theme of 'Aparichita' is the critique of dowry system and arranged marriage practices in Bengali society.",
+            "language": "en",
+            "relevant_chunks": ["page_1_definition_1", "page_3_paragraph_2"]
+        },
+        {
+            "id": "test_004",
+            "question": "অনুপমের মামার চরিত্রের বৈশিষ্ট্য কী?",
+            "answer": "অনুপমের মামা একজন লোভী, কূটবুদ্ধিসম্পন্ন এবং স্বার্থপর ব্যক্তি যিনি পরিবারের সব দায়িত্ব নিয়ন্ত্রণ করেন।",
             "language": "bn",
-            "relevant_chunks": ["chunk_hsc_exam_1", "chunk_schedule_1"]
+            "relevant_chunks": ["page_2_paragraph_2", "page_3_paragraph_1"]
+        },
+        {
+            "id": "test_005",
+            "question": "গল্পে 'ফল্গুর বালির মতো' বলতে কী বোঝানো হয়েছে?",
+            "answer": "ফল্গুর বালির মতো বলতে বোঝানো হয়েছে যে, মামা বাইরে থেকে সাধারণ মনে হলেও ভেতরে সংসারের সব বিষয় নিয়ন্ত্রণ করেন।",
+            "language": "bn",
+            "relevant_chunks": ["page_2_definition_1", "page_2_paragraph_3"]
+        },
+        {
+            "id": "test_006", 
+            "question": "Who is Harish in the story and what role does he play?",
+            "answer": "Harish is Anupam's friend who brings the marriage proposal and acts as a mediator between the two families.",
+            "language": "en",
+            "relevant_chunks": ["page_3_paragraph_1", "page_4_paragraph_1"]
+        },
+        {
+            "id": "test_007",
+            "question": "বিবাহের ক্ষেত্রে অনুপমের মামার দৃষ্টিভঙ্গি কী ছিল?",
+            "answer": "বিবাহের ক্ষেত্রে মামার দৃষ্টিভঙ্গি ছিল যে মেয়ের পরিবার ধনী হতে হবে এবং যৌতুক দিতে সক্ষম হতে হবে।",
+            "language": "bn",
+            "relevant_chunks": ["page_4_paragraph_2", "page_5_paragraph_1"]
+        },
+        {
+            "id": "test_008",
+            "question": "What does the gold testing scene reveal about the character dynamics?",
+            "answer": "The gold testing scene reveals the materialistic nature of the groom's family and their lack of trust, which ultimately leads to the breakdown of the marriage proposal.",
+            "language": "en",
+            "relevant_chunks": ["page_8_paragraph_1", "page_9_paragraph_1"]
+        },
+        {
+            "id": "test_009",
+            "question": "শম্ভুনাথ বাবু কেন স্বর্ণ পরীক্ষা করতে চেয়েছিলেন?",
+            "answer": "শম্ভুনাথ বাবু স্বর্ণ পরীক্ষা করতে চেয়েছিলেন কারণ তিনি নিশ্চিত হতে চেয়েছিলেন যে দেওয়া স্বর্ণালংকার খাঁটি কিনা।",
+            "language": "bn", 
+            "relevant_chunks": ["page_8_paragraph_2", "page_9_paragraph_2"]
+        },
+        {
+            "id": "test_010",
+            "question": "'গণ্ডূষ' শব্দের অর্থ কী এবং গল্পে এর ব্যবহার কেমন?",
+            "answer": "'গণ্ডূষ' শব্দের অর্থ এক মুখ বা এক কোষ জল। গল্পে এর ব্যবহার করে বোঝানো হয়েছে যে মামার কাছে খুব সামান্য পরিমাণ জলও পাওয়া যায় না।",
+            "language": "bn",
+            "relevant_chunks": ["page_2_definition_2", "page_2_paragraph_4"]
         }
     ]
+
+def create_sample_test_set() -> List[Dict[str, Any]]:
+    """Create a sample test set for demonstration - keeping for backward compatibility"""
+    return create_hsc_bangla_test_set()
 
 if __name__ == "__main__":
     # Example usage

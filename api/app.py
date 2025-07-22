@@ -117,11 +117,10 @@ app.add_middleware(
 
 # Configuration
 CONFIG = {
-    "pdf_path": os.getenv("PDF_PATH", "./data/hsc26.pdf"),
+    "pdf_path": os.getenv("PDF_PATH", "./data/HSC26-Bangla1st-Paper.pdf"),
     "vector_store_dir": os.getenv("VECTOR_STORE_DIR", "./vector_store"),
     "cache_dir": os.getenv("CACHE_DIR", "./cache"),
-    "bangla_model": os.getenv("BANGLA_MODEL", "bongllama"),
-    "english_model": os.getenv("ENGLISH_MODEL", "mistral:instruct"),
+    "model_name": os.getenv("MODEL_NAME", "aya-expanse:8b"),
     "ollama_url": os.getenv("OLLAMA_URL", "http://localhost:11434"),
     "chunk_size": int(os.getenv("CHUNK_SIZE", "512")),
     "embedding_model": os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
@@ -183,9 +182,8 @@ async def initialize_rag_system():
         rag_chain = create_rag_chain(
             vector_store=vector_store,
             embedder=embedder,
-            bangla_model=CONFIG["bangla_model"],
-            english_model=CONFIG["english_model"],
-            ollama_base_url=CONFIG["ollama_url"]
+            model_name=CONFIG["model_name"],
+            base_url=CONFIG["ollama_url"]
         )
         
         # Update system status

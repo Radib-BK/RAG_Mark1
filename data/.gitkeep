@@ -1,2 +1,18 @@
-# Data directory for PDF files
-# Place your HSC textbook PDF (hsc26.pdf) here 
+# HSC Bangla 1st Paper PDF and extracted content
+# 
+# This directory contains:
+# ✅ HSC26-Bangla1st-Paper.pdf (Original HSC textbook - 49 pages)
+# ✅ extracted/ folder with processed text content (84,428 characters)
+#
+# Content includes stories like:
+# - অপরিচিতা (Aparichita) by Rabindranath Tagore
+# - Literary analysis and vocabulary sections
+# - MCQ questions with answers
+# - Word meanings and annotations
+# - Character analysis and themes
+#
+# The PDF has been successfully processed with:
+# ✅ Bangla text: Detected
+# ✅ English text: Detected  
+# ✅ MCQ questions: Detected
+# ✅ Tables and structured content: Detected

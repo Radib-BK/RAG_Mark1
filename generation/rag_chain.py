@@ -96,124 +96,88 @@ class LanguageDetector:
 
 class OllamaLLMManager:
     """
-    Manager for multiple Ollama models
+    Manager for single Ollama model (aya-expanse)
     """
     
     def __init__(self, 
-                 bangla_model: str = "bongllama",
-                 english_model: str = "mistral:instruct",
+                 model_name: str = "aya-expanse:8b",
                  base_url: str = "http://localhost:11434",
                  temperature: float = 0.1):
         """
-        Initialize Ollama LLM manager
+        Initialize Ollama LLM manager with single model
         
         Args:
-            bangla_model: Model name for Bangla text
-            english_model: Model name for English text
+            model_name: Single model name for all languages
             base_url: Ollama API base URL
             temperature: Generation temperature
         """
-        self.bangla_model = bangla_model
-        self.english_model = english_model
+        self.model_name = model_name
         self.base_url = base_url
         self.temperature = temperature
         
-        # Initialize LLMs
-        self.llms = {}
-        self._init_llms()
+        # Initialize single LLM
+        self.llm = None
+        self._init_llm()
         
-        logger.info(f"Initialized Ollama LLMs - Bangla: {bangla_model}, English: {english_model}")
+        logger.info(f"Initialized Ollama LLM - Model: {model_name}")
     
-    def _init_llms(self):
-        """Initialize Ollama LLM instances"""
+    def _init_llm(self):
+        """Initialize Ollama LLM instance"""
         try:
-            self.llms['bn'] = Ollama(
-                model=self.bangla_model,
+            self.llm = Ollama(
+                model=self.model_name,
                 base_url=self.base_url,
                 temperature=self.temperature
             )
-            
-            self.llms['en'] = Ollama(
-                model=self.english_model,
-                base_url=self.base_url,
-                temperature=self.temperature
-            )
-            
-            self.llms['mixed'] = self.llms['bn']  # Use Bangla model for mixed content
             
         except Exception as e:
-            logger.error(f"Error initializing Ollama LLMs: {str(e)}")
+            logger.error(f"Error initializing Ollama LLM: {str(e)}")
             raise
     
-    def get_llm(self, language: str) -> Ollama:
+    def get_llm(self, language: str = None) -> Ollama:
         """
-        Get appropriate LLM for language
+        Get LLM (language parameter ignored since we use single model)
         
         Args:
-            language: Language code
+            language: Language code (ignored)
             
         Returns:
             Ollama LLM instance
         """
-        return self.llms.get(language, self.llms['en'])
+        return self.llm
     
     def test_connection(self) -> Dict[str, bool]:
         """
-        Test connection to Ollama models
+        Test connection to Ollama model
         
         Returns:
             Dictionary with connection status
         """
-        results = {}
-        
-        for lang, llm in self.llms.items():
-            try:
-                # Simple test query
-                response = llm.invoke("Hello")
-                results[lang] = bool(response)
-            except Exception as e:
-                logger.error(f"Connection test failed for {lang} model: {str(e)}")
-                results[lang] = False
-        
-        return results
+        try:
+            # Simple test query
+            response = self.llm.invoke("Hello")
+            return {"model": bool(response)}
+        except Exception as e:
+            logger.error(f"Connection test failed: {str(e)}")
+            return {"model": False}
 
 class RAGPromptManager:
     """
-    Manager for RAG prompt templates
+    Manager for RAG prompt templates (single multilingual template)
     """
     
     def __init__(self):
-        """Initialize prompt templates"""
-        self.templates = self._create_templates()
+        """Initialize multilingual prompt template"""
+        self.template = self._create_template()
     
-    def _create_templates(self) -> Dict[str, PromptTemplate]:
-        """Create language-specific prompt templates"""
+    def _create_template(self) -> PromptTemplate:
+        """Create single multilingual prompt template for aya-expanse"""
         
-        # English template
-        english_template = """Use the following context from the HSC textbook to answer the user's question.
-If you cannot find the answer in the provided context, say: "I'm sorry, I couldn't find the answer in the book."
+        # Multilingual template that works for both Bangla and English
+        multilingual_template = """Use the following context from the HSC textbook to answer the question. Answer in the same language as the question.
+নিম্নলিখিত HSC পাঠ্যবইয়ের প্রসঙ্গ ব্যবহার করে প্রশ্নের উত্তর দিন। প্রশ্নের ভাষায় উত্তর দিন।
 
-Context:
-{context}
-
-Question: {question}
-
-Answer: """
-
-        # Bangla template  
-        bangla_template = """নিম্নলিখিত HSC পাঠ্যবইয়ের প্রসঙ্গ ব্যবহার করে ব্যবহারকারীর প্রশ্নের উত্তর দিন।
-যদি আপনি প্রদত্ত প্রসঙ্গে উত্তর খুঁজে না পান, তাহলে বলুন: "দুঃখিত, আমি বইয়ে উত্তর খুঁজে পাইনি।"
-
-প্রসঙ্গ:
-{context}
-
-প্রশ্ন: {question}
-
-উত্তর: """
-
-        # Mixed language template (primarily Bangla with English fallback)
-        mixed_template = """নিম্নলিখিত HSC পাঠ্যবইয়ের প্রসঙ্গ ব্যবহার করে প্রশ্নের উত্তর দিন। Use the context from the HSC textbook to answer the question.
-যদি উত্তর না পান তাহলে বলুন: "দুঃখিত, আমি বইয়ে উত্তর খুঁজে পাইনি।" / If you cannot find the answer, say: "I'm sorry, I couldn't find the answer in the book."
+If you cannot find the answer in the context, say: "I couldn't find the answer in the book" or "আমি বইয়ে উত্তর খুঁজে পাইনি।"
 
 Context/প্রসঙ্গ:
 {context}
@@ -222,24 +186,14 @@ Question/প্রশ্ন: {question}
 
 Answer/উত্তর: """
 
-        return {
-            'en': PromptTemplate(
-                template=english_template,
-                input_variables=['context', 'question']
-            ),
-            'bn': PromptTemplate(
-                template=bangla_template,
-                input_variables=['context', 'question']
-            ),
-            'mixed': PromptTemplate(
-                template=mixed_template,
-                input_variables=['context', 'question']
-            )
-        }
+        return PromptTemplate(
+            template=multilingual_template,
+            input_variables=['context', 'question']
+        )
     
-    def get_prompt(self, language: str) -> PromptTemplate:
-        """Get prompt template for language"""
-        return self.templates.get(language, self.templates['en'])
+    def get_prompt(self, language: str = None) -> PromptTemplate:
+        """Get prompt template (language parameter ignored since we use single template)"""
+        return self.template
 
 class MultilingualRAGChain:
     """
@@ -249,9 +203,8 @@ class MultilingualRAGChain:
     def __init__(self,
                  vector_store,
                  embedder,
-                 bangla_model: str = "bongllama",
-                 english_model: str = "mistral:instruct",
-                 ollama_base_url: str = "http://localhost:11434",
+                 model_name: str = "aya-expanse:8b",
+                 base_url: str = "http://localhost:11434",
                  memory_window: int = 10,
                  temperature: float = 0.1):
         """
@@ -260,9 +213,8 @@ class MultilingualRAGChain:
         Args:
             vector_store: Vector store instance
             embedder: Embedder instance
-            bangla_model: Bangla model name
-            english_model: English model name
-            ollama_base_url: Ollama base URL
+            model_name: Single model name for all languages
+            base_url: Ollama base URL
             memory_window: Memory window size
             temperature: Generation temperature
         """
@@ -272,9 +224,8 @@ class MultilingualRAGChain:
         # Initialize components
         self.language_detector = LanguageDetector()
         self.llm_manager = OllamaLLMManager(
-            bangla_model=bangla_model,
-            english_model=english_model,
-            base_url=ollama_base_url,
+            model_name=model_name,
+            base_url=base_url,
             temperature=temperature
         )
         self.prompt_manager = RAGPromptManager()
@@ -466,7 +417,7 @@ class MultilingualRAGChain:
                 answer=response.strip(),
                 source_chunks=source_chunks if include_sources else [],
                 query_language=language,
-                model_used=f"{language}:{llm.model}",
+                model_used=f"{llm.model}",
                 confidence_score=confidence
             )
             
@@ -542,18 +493,16 @@ class MultilingualRAGChain:
 
 def create_rag_chain(vector_store,
                     embedder,
-                    bangla_model: str = "bongllama",
-                    english_model: str = "mistral:instruct",
-                    ollama_base_url: str = "http://localhost:11434") -> MultilingualRAGChain:
+                    model_name: str = "aya-expanse:8b",
+                    base_url: str = "http://localhost:11434") -> MultilingualRAGChain:
     """
     Factory function to create RAG chain
     
     Args:
         vector_store: Vector store instance
         embedder: Embedder instance
-        bangla_model: Bangla model name
-        english_model: English model name
-        ollama_base_url: Ollama base URL
+        model_name: Single model name for all languages
+        base_url: Ollama base URL
         
     Returns:
         MultilingualRAGChain instance
@@ -561,9 +510,8 @@ def create_rag_chain(vector_store,
     return MultilingualRAGChain(
         vector_store=vector_store,
         embedder=embedder,
-        bangla_model=bangla_model,
-        english_model=english_model,
-        ollama_base_url=ollama_base_url
+        model_name=model_name,
+        base_url=base_url
     )
 
 if __name__ == "__main__":
@@ -611,8 +559,7 @@ if __name__ == "__main__":
         rag_chain = create_rag_chain(
             vector_store=vector_store,
             embedder=embedder,
-            bangla_model="bongllama",
-            english_model="mistral:instruct"
+            model_name="aya-expanse:8b"
         )
         
         # Test components
@@ -620,7 +567,7 @@ if __name__ == "__main__":
         logger.info(f"Component test results: {test_results}")
         
         # Test questions (if Ollama is running)
-        if any(test_results['ollama_connection'].values()):
+        if test_results['ollama_connection']['model']:
             test_questions = [
                 "বাংলাদেশের রাজধানী কী?",
                 "What is the capital of Bangladesh?",

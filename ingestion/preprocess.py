@@ -112,7 +112,7 @@ class TextPreprocessor:
     
     def identify_content_type(self, text: str) -> str:
         """
-        Identify the type of content
+        Identify the type of content - optimized for HSC note structure
         
         Args:
             text: Text to analyze
@@ -121,27 +121,57 @@ class TextPreprocessor:
             Content type string
         """
         text_lower = text.lower().strip()
+        text_lines = text.split('\n')
         
-        # Check for MCQ
-        if self.mcq_pattern.search(text):
+        # Check for answer table (common patterns in HSC answer sections)
+        answer_indicators = ['উত্তর', 'answer', 'ans:', 'উঃ', 'সঠিক উত্তর']
+        if any(indicator in text_lower for indicator in answer_indicators) and len(text_lines) > 3:
+            return 'answer_table'
+        
+        # Check for MCQ with enhanced patterns for HSC format
+        mcq_patterns = [
+            r'[ক-হ]\)',          # Bengali MCQ options
+            r'[a-d]\)',           # English MCQ options  
+            r'\([ক-হ]\)',        # Bengali with parentheses
+            r'\([a-d]\)',         # English with parentheses
+            r'[১-৪]\.',           # Bengali numerals
+            r'প্রশ্ন\s*[:\-]',    # Question indicator
+            r'Question\s*[:\-]'   # English question
+        ]
+        
+        mcq_count = sum(1 for pattern in mcq_patterns if re.search(pattern, text))
+        if mcq_count > 0 or self.mcq_pattern.search(text):
             return 'mcq'
         
-        # Check for table content
-        if '|' in text and text.count('|') > 2:
+        # Check for table content (enhanced for HSC tables)
+        if ('|' in text and text.count('|') > 2) or \
+           (len(text_lines) > 2 and all(len(line.split()) > 2 for line in text_lines[:3])):
             return 'table'
+        
+        # Check for section headings (common in HSC notes)
+        heading_patterns = [
+            r'^\d+\.\d+',          # 1.1, 2.3 etc
+            r'^[অআইঈউঊএঐওঔ]',    # Bengali section markers
+            r'^অধ্যায়',             # Chapter
+            r'^পরিচ্ছেদ',           # Section
+            r'^বিষয়',              # Topic
+        ]
+        
+        if len(text.strip()) < 150 and any(re.search(pattern, text) for pattern in heading_patterns):
+            return 'heading'
         
         # Check for list items
         if re.search(r'^[\s]*[•\-\*]\s', text, re.MULTILINE):
             return 'list'
         
-        # Check for headings (short lines in caps or with numbers)
-        if len(text.strip()) < 100 and (text.isupper() or re.search(r'^\d+[\.\)]\s', text)):
-            return 'heading'
-        
         # Check for mathematical content
         math_indicators = ['=', '≠', '≈', '<', '>', '≤', '≥', '+', '-', '×', '÷', '∑', '∏', '∫']
         if any(indicator in text for indicator in math_indicators) and len(text) < 200:
             return 'equation'
+        
+        # Check for definitions (common in educational content)
+        if any(word in text_lower for word in ['সংজ্ঞা', 'definition', 'অর্থ', 'meaning']) and len(text) < 300:
+            return 'definition'
         
         return 'paragraph'
     
@@ -382,14 +412,119 @@ class TextPreprocessor:
         
         return chunks
     
-    def process_document(self, document_data: Dict[str, Any], 
-                        chunking_strategy: str = "mixed") -> List[TextChunk]:
+    def chunk_by_content_structure(self, text: str, page_num: int = 0) -> List[TextChunk]:
         """
-        Process complete document and create chunks
+        Chunk text based on HSC note structure (paragraph → table → MCQ → answers)
+        
+        Args:
+            text: Text to chunk
+            page_num: Source page number
+            
+        Returns:
+            List of TextChunk objects
+        """
+        # Split into sections based on content structure
+        sections = self.paragraph_pattern.split(text)
+        chunks = []
+        current_section = ""
+        section_type = "paragraph"
+        chunk_index = 0
+        
+        for i, section in enumerate(sections):
+            section = section.strip()
+            if len(section) < self.min_chunk_size:
+                continue
+            
+            content_type = self.identify_content_type(section)
+            language = self.detect_language(section)
+            
+            # Group related content types together
+            if content_type in ['paragraph', 'definition']:
+                # Start new section for paragraphs and definitions
+                if current_section and section_type != content_type:
+                    # Create chunk from previous section
+                    chunk = self._create_chunk(current_section, page_num, chunk_index, section_type, language)
+                    if chunk:
+                        chunks.append(chunk)
+                        chunk_index += 1
+                    current_section = section
+                    section_type = content_type
+                else:
+                    current_section = current_section + "\n\n" + section if current_section else section
+                    section_type = content_type
+            
+            elif content_type in ['mcq', 'answer_table']:
+                # Always create separate chunks for MCQs and answer tables
+                if current_section:
+                    chunk = self._create_chunk(current_section, page_num, chunk_index, section_type, language)
+                    if chunk:
+                        chunks.append(chunk)
+                        chunk_index += 1
+                    current_section = ""
+                
+                # Create chunk for MCQ/answer section
+                chunk = self._create_chunk(section, page_num, chunk_index, content_type, language)
+                if chunk:
+                    chunks.append(chunk)
+                    chunk_index += 1
+            
+            elif content_type == 'table':
+                # Attach tables to the previous content (usually paragraph)
+                if current_section and section_type in ['paragraph', 'definition']:
+                    current_section = current_section + "\n\nTable:\n" + section
+                else:
+                    # Create standalone table chunk
+                    chunk = self._create_chunk(section, page_num, chunk_index, content_type, language)
+                    if chunk:
+                        chunks.append(chunk)
+                        chunk_index += 1
+            
+            else:
+                # Handle other content types (headings, lists, etc.)
+                chunk = self._create_chunk(section, page_num, chunk_index, content_type, language)
+                if chunk:
+                    chunks.append(chunk)
+                    chunk_index += 1
+        
+        # Create final chunk if there's remaining content
+        if current_section:
+            chunk = self._create_chunk(current_section, page_num, chunk_index, section_type, 
+                                     self.detect_language(current_section))
+            if chunk:
+                chunks.append(chunk)
+        
+        return chunks
+    
+    def _create_chunk(self, content: str, page_num: int, chunk_index: int, 
+                     content_type: str, language: str) -> Optional[TextChunk]:
+        """Helper method to create TextChunk objects"""
+        if len(content.strip()) < self.min_chunk_size:
+            return None
+        
+        # Split long content
+        if len(content) > self.chunk_size:
+            sub_chunks = self._split_long_text(content, page_num, chunk_index, language, content_type)
+            return sub_chunks[0] if sub_chunks else None
+        
+        return TextChunk(
+            content=content.strip(),
+            chunk_id=f"page_{page_num}_{content_type}_{chunk_index}",
+            source_page=page_num,
+            chunk_index=chunk_index,
+            language=language,
+            content_type=content_type,
+            word_count=len(content.split()),
+            char_count=len(content)
+        )
+
+    def process_document(self, document_data: Dict[str, Any], 
+                        chunking_strategy: str = "hsc_structure") -> List[TextChunk]:
+        """
+        Process complete document and create chunks - optimized for HSC notes
         
         Args:
             document_data: Document data from PDF extraction
-            chunking_strategy: "paragraphs", "sentences", or "mixed"
+            chunking_strategy: "paragraphs", "sentences", "mixed", or "hsc_structure"
             
         Returns:
             List of TextChunk objects
@@ -398,7 +533,15 @@ class TextPreprocessor:
         
         all_chunks = []
         
-        if chunking_strategy == "paragraphs":
+        if chunking_strategy == "hsc_structure":
+            # Use HSC-optimized structure-based chunking
+            for page_data in document_data['pages']:
+                if page_data['text']:
+                    cleaned_text = self.clean_text(page_data['text'])
+                    page_chunks = self.chunk_by_content_structure(cleaned_text, page_data['page_number'])
+                    all_chunks.extend(page_chunks)
+        
+        elif chunking_strategy == "paragraphs":
             # Process each page with paragraph chunking
             for page_data in document_data['pages']:
                 if page_data['text']:
@@ -414,7 +557,7 @@ class TextPreprocessor:
                     page_chunks = self.chunk_by_sentences(cleaned_text, page_data['page_number'])
                     all_chunks.extend(page_chunks)
         
-        else:  # mixed strategy
+        else:  # mixed strategy (fallback)
             # Use different strategies based on content type
             for page_data in document_data['pages']:
                 if page_data['text']:
@@ -436,7 +579,14 @@ class TextPreprocessor:
         final_chunks = self._filter_chunks(all_chunks)
         
         logger.info(f"Document processing completed: {len(final_chunks)} chunks created")
-        logger.info(f"Average chunk size: {sum(c.char_count for c in final_chunks) / len(final_chunks):.0f} characters")
+        if final_chunks:
+            logger.info(f"Average chunk size: {sum(c.char_count for c in final_chunks) / len(final_chunks):.0f} characters")
+            
+            # Log content type distribution
+            content_types = {}
+            for chunk in final_chunks:
+                content_types[chunk.content_type] = content_types.get(chunk.content_type, 0) + 1
+            logger.info(f"Content type distribution: {content_types}")
         
         return final_chunks
     
@@ -496,7 +646,7 @@ class TextPreprocessor:
 def preprocess_document(document_data: Dict[str, Any], 
                        chunk_size: int = 512,
                        chunk_overlap: int = 50,
-                       chunking_strategy: str = "mixed") -> List[TextChunk]:
+                       chunking_strategy: str = "hsc_structure") -> List[TextChunk]:
     """
     Convenience function to preprocess document
     
