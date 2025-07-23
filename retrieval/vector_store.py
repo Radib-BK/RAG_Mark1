@@ -307,13 +307,16 @@ class FAISSVectorStore:
             'index_type': self.index_type,
             'metric': self.metric,
             'total_chunks': len(self.chunk_texts),
-            'index_size_mb': 0
+            'index_size_mb': 0.0
         }
         
         # Calculate approximate index size
         if self.index.ntotal > 0:
             # Rough estimate: embedding_dim * num_vectors * 4 bytes (float32)
-            stats['index_size_mb'] = (self.embedding_dimension * self.index.ntotal * 4) / (1024 * 1024)
+            # Plus metadata overhead
+            embedding_size = (self.embedding_dimension * self.index.ntotal * 4) / (1024 * 1024)
+            metadata_size = (len(self.chunk_texts) * 100) / (1024 * 1024)  # Rough metadata estimate
+            stats['index_size_mb'] = round(embedding_size + metadata_size, 2)
         
         return stats
     
@@ -494,12 +497,30 @@ def create_vector_store(embedding_dimension: int,
     Returns:
         FAISSVectorStore instance
     """
-    return FAISSVectorStore(
+    # Use default store directory if none provided
+    if store_dir is None:
+        store_dir = "vector_store"
+    
+    # Create vector store
+    vector_store = FAISSVectorStore(
         embedding_dimension=embedding_dimension,
         index_type=index_type,
         metric=metric,
         store_dir=store_dir
     )
+    
+    # Try to load existing index if it exists
+    index_path = Path(store_dir) / "faiss_index.idx"
+    if index_path.exists():
+        logger.info(f"Loading existing index from {index_path}")
+        if vector_store.load_index(str(index_path)):
+            logger.info(f"Successfully loaded existing index with {vector_store.index.ntotal} vectors")
+        else:
+            logger.warning("Failed to load existing index, starting with empty vector store")
+    else:
+        logger.info(f"No existing index found at {index_path}, starting with empty vector store")
+    
+    return vector_store
 
 def build_vector_store_from_embeddings(embedding_data: Dict[str, Any],
                                      index_type: str = "flat",
@@ -537,6 +558,32 @@ def build_vector_store_from_embeddings(embedding_data: Dict[str, Any],
     vector_store.add_embeddings(embeddings, chunk_ids, texts, metadata)
     
     return vector_store
+
+def load_vector_store(store_dir: Optional[str] = None,
+                     embedding_dimension: int = 384,
+                     index_type: str = "flat",
+                     metric: str = "cosine") -> FAISSVectorStore:
+    """
+    Load existing vector store or create empty one
+    
+    Args:
+        store_dir: Storage directory (default: "vector_store")
+        embedding_dimension: Dimension of embeddings
+        index_type: Type of FAISS index
+        metric: Distance metric
+        
+    Returns:
+        FAISSVectorStore instance
+    """
+    if store_dir is None:
+        store_dir = "vector_store"
+    
+    return create_vector_store(
+        embedding_dimension=embedding_dimension,
+        index_type=index_type,
+        metric=metric,
+        store_dir=store_dir
+    )
 
 if __name__ == "__main__":
     # Example usage

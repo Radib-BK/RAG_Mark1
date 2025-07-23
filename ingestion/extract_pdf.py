@@ -6,17 +6,39 @@ This module handles extraction of text from complex PDFs containing:
 - MCQs (Multiple Choice Questions)
 - Paragraphs with various formatting
 - Tables and structured content
+- OCR fallback for image-based text
 """
 
 import os
 import re
 import logging
+import unicodedata
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 import pdfplumber
 import PyPDF2
+from ftfy import fix_text
 from loguru import logger
+
+# OCR dependencies
+try:
+    import pytesseract
+    from pdf2image import convert_from_path
+    from PIL import Image
+    OCR_AVAILABLE = True
+    logger.info("OCR capabilities available (pytesseract + pdf2image)")
+except ImportError as e:
+    OCR_AVAILABLE = False
+    logger.warning(f"OCR not available: {e}")
+
+# Import our text normalization utilities
+try:
+    from .text_normalizer import comprehensive_bangla_normalize
+except ImportError:
+    # Fallback if module not found
+    def comprehensive_bangla_normalize(text: str) -> str:
+        return unicodedata.normalize("NFC", text)
 
 class PDFExtractor:
     """
@@ -125,37 +147,21 @@ class PDFExtractor:
     
     def _clean_extracted_text(self, text: str) -> str:
         """
-        Clean and normalize extracted text
+        Clean and normalize extracted text with comprehensive Bangla Unicode normalization
         
         Args:
             text: Raw extracted text
             
         Returns:
-            Cleaned text
+            Cleaned and normalized text
         """
         if not text:
             return ""
         
-        # Remove excessive whitespace and normalize line breaks
-        text = re.sub(r'\n\s*\n', '\n\n', text)
-        text = re.sub(r' +', ' ', text)
-        text = re.sub(r'\t', ' ', text)
+        # Use comprehensive Bangla normalization
+        text = comprehensive_bangla_normalize(text)
         
-        # Clean up common PDF artifacts
-        text = re.sub(r'[^\S\n]{2,}', ' ', text)  # Multiple spaces
-        text = re.sub(r'\n +', '\n', text)  # Leading spaces on lines
-        text = re.sub(r' +\n', '\n', text)  # Trailing spaces on lines
-        
-        # Normalize Bangla text (basic cleanup)
-        # Remove zero-width characters and normalize Unicode
-        text = text.replace('\u200c', '').replace('\u200d', '')  # Zero-width non-joiner/joiner
-        text = text.replace('\ufeff', '')  # Byte order mark
-        
-        # Fix common OCR errors in Bangla text
-        text = re.sub(r'([০-৯])([a-zA-Z])', r'\1 \2', text)  # Space between Bangla digits and English
-        text = re.sub(r'([a-zA-Z])([০-৯])', r'\1 \2', text)  # Space between English and Bangla digits
-        
-        return text.strip()
+        return text
     
     def _extract_table_text(self, tables: List[List[List[str]]]) -> str:
         """
@@ -235,21 +241,177 @@ class PDFExtractor:
         
         return content_types
     
+    def extract_text_ocr(self) -> List[Dict[str, Any]]:
+        """
+        Extract text using OCR as fallback for image-based PDFs
+        
+        Returns:
+            List of dictionaries containing page content from OCR
+        """
+        if not OCR_AVAILABLE:
+            logger.error("OCR not available. Install pytesseract and pdf2image.")
+            return []
+        
+        logger.info("Starting OCR extraction (this may take a while)...")
+        pages_content = []
+        
+        try:
+            # Convert PDF pages to images
+            images = convert_from_path(str(self.pdf_path), dpi=300)
+            logger.info(f"Converted PDF to {len(images)} images for OCR")
+            
+            for page_num, image in enumerate(images, 1):
+                logger.debug(f"Processing page {page_num} with OCR...")
+                
+                # Configure tesseract for Bengali + English
+                # Using both Bengali and English language packs
+                config = '--oem 3 --psm 6 -l ben+eng'
+                
+                try:
+                    # Extract text using OCR
+                    text = pytesseract.image_to_string(image, config=config)
+                    
+                    if text.strip():
+                        # Clean and normalize OCR text
+                        cleaned_text = self._clean_ocr_text(text)
+                        
+                        page_content = {
+                            'page_number': page_num,
+                            'text': cleaned_text,
+                            'tables': "",  # OCR doesn't extract structured tables
+                            'bbox': None,
+                            'extraction_method': 'ocr'
+                        }
+                        
+                        pages_content.append(page_content)
+                        logger.debug(f"OCR extracted {len(cleaned_text)} characters from page {page_num}")
+                    else:
+                        logger.warning(f"No text extracted from page {page_num} via OCR")
+                        
+                except Exception as e:
+                    logger.error(f"OCR failed for page {page_num}: {str(e)}")
+                    continue
+            
+            logger.info(f"OCR extraction completed: {len(pages_content)} pages processed")
+            return pages_content
+            
+        except Exception as e:
+            logger.error(f"OCR extraction failed: {str(e)}")
+            return []
+    
+    def _clean_ocr_text(self, text: str) -> str:
+        """
+        Clean OCR extracted text
+        
+        Args:
+            text: Raw OCR text
+            
+        Returns:
+            Cleaned text
+        """
+        if not text:
+            return ""
+        
+        # Apply basic cleaning
+        cleaned = self._clean_extracted_text(text)
+        
+        # Additional OCR-specific cleaning
+        # Remove excessive whitespace that OCR often introduces
+        cleaned = re.sub(r'\n\s*\n\s*\n', '\n\n', cleaned)
+        cleaned = re.sub(r' {3,}', ' ', cleaned)
+        
+        # Fix common OCR errors for Bengali text
+        # These are common OCR misrecognitions
+        ocr_fixes = {
+            'ই ': 'ই',
+            'া ': 'া',
+            'ে ': 'ে',
+            'ো ': 'ো',
+            '় ': '়',
+            'ং ': 'ং',
+            'ৃ ': 'ৃ',
+        }
+        
+        for wrong, correct in ocr_fixes.items():
+            cleaned = cleaned.replace(wrong, correct)
+        
+        return cleaned.strip()
+    
+    def extract_with_ocr_fallback(self) -> List[Dict[str, Any]]:
+        """
+        Extract text with OCR fallback for pages with little/no text
+        
+        Returns:
+            List of page content with OCR fallback applied where needed
+        """
+        logger.info("Starting extraction with OCR fallback...")
+        
+        # First try regular extraction
+        pages_content = self.extract_text_pdfplumber()
+        
+        if not pages_content:
+            logger.warning("Regular extraction failed, using full OCR")
+            return self.extract_text_ocr()
+        
+        # Check each page for insufficient text (likely image-based)
+        enhanced_pages = []
+        ocr_threshold = 50  # Minimum characters to consider successful extraction
+        
+        for page_data in pages_content:
+            page_text = page_data.get('text', '')
+            
+            if len(page_text.strip()) < ocr_threshold:
+                logger.warning(f"Page {page_data['page_number']} has insufficient text ({len(page_text)} chars), trying OCR...")
+                
+                # Extract this specific page with OCR
+                try:
+                    images = convert_from_path(str(self.pdf_path), 
+                                            first_page=page_data['page_number'],
+                                            last_page=page_data['page_number'],
+                                            dpi=300)
+                    
+                    if images:
+                        config = '--oem 3 --psm 6 -l ben+eng'
+                        ocr_text = pytesseract.image_to_string(images[0], config=config)
+                        cleaned_ocr = self._clean_ocr_text(ocr_text)
+                        
+                        if len(cleaned_ocr.strip()) > len(page_text.strip()):
+                            logger.info(f"OCR improved page {page_data['page_number']}: "
+                                      f"{len(page_text)} -> {len(cleaned_ocr)} characters")
+                            page_data['text'] = cleaned_ocr
+                            page_data['extraction_method'] = 'ocr_fallback'
+                        
+                except Exception as e:
+                    logger.error(f"OCR fallback failed for page {page_data['page_number']}: {str(e)}")
+            
+            enhanced_pages.append(page_data)
+        
+        return enhanced_pages
+    
     def extract_full_document(self) -> Dict[str, Any]:
         """
-        Extract complete document with metadata
+        Extract complete document with metadata and OCR fallback
         
         Returns:
             Dictionary containing all extracted content and metadata
         """
         logger.info(f"Starting full document extraction from {self.pdf_path}")
         
-        # Try pdfplumber first, fallback to PyPDF2
-        pages_content = self.extract_text_pdfplumber()
+        # Try enhanced extraction with OCR fallback
+        pages_content = self.extract_with_ocr_fallback()
         
         if not pages_content:
-            logger.warning("No content extracted, trying alternative method")
-            pages_content = self.extract_text_pypdf2()
+            logger.warning("Enhanced extraction failed, trying basic methods")
+            # Fallback to basic methods
+            pages_content = self.extract_text_pdfplumber()
+            
+            if not pages_content:
+                logger.warning("PDFplumber failed, trying PyPDF2")
+                pages_content = self.extract_text_pypdf2()
+                
+                if not pages_content and OCR_AVAILABLE:
+                    logger.warning("All text extraction failed, using full OCR as last resort")
+                    pages_content = self.extract_text_ocr()
         
         # Combine all text for analysis
         full_text = "\n\n".join([page['text'] for page in pages_content if page['text']])
@@ -309,16 +471,26 @@ def extract_pdf_content(pdf_path: str, output_dir: Optional[str] = None) -> Dict
     return document_data
 
 if __name__ == "__main__":
-    # Example usage
-    pdf_path = "../data/HSC26-Bangla1st-Paper.pdf"
+    # Example usage - determine correct path based on current working directory
+    import os
+    
+    # Check if we're in the ingestion directory or project root
+    if os.path.basename(os.getcwd()) == "ingestion":
+        pdf_path = "../data/HSC26-Bangla1st-Paper.pdf"
+        output_dir = "../data/extracted/"
+    else:
+        pdf_path = "data/HSC26-Bangla1st-Paper.pdf"
+        output_dir = "data/extracted/"
     
     if os.path.exists(pdf_path):
         try:
-            document_data = extract_pdf_content(pdf_path, "../data/extracted/")
+            document_data = extract_pdf_content(pdf_path, output_dir)
             print(f"Successfully extracted {document_data['statistics']['total_pages']} pages")
             print(f"Content analysis: {document_data['content_analysis']}")
         except Exception as e:
             print(f"Error: {str(e)}")
     else:
         print(f"PDF file not found: {pdf_path}")
-        print("Please place your HSC textbook PDF in the data/ directory") 
+        print("Please place your HSC textbook PDF in the data/ directory")
+        print(f"Current working directory: {os.getcwd()}")
+        print(f"Looking for PDF at: {os.path.abspath(pdf_path)}") 

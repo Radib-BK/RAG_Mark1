@@ -17,7 +17,7 @@ from pathlib import Path
 
 import nltk
 from loguru import logger
-from langdetect import detect, LangDetectError
+from langdetect import detect, LangDetectException
 
 # Download required NLTK data
 try:
@@ -66,7 +66,8 @@ class TextPreprocessor:
         self.bangla_sentence_pattern = re.compile(r'[।!?]+\s*')
         self.english_sentence_pattern = re.compile(r'[.!?]+\s+')
         self.paragraph_pattern = re.compile(r'\n\s*\n+')
-        self.mcq_pattern = re.compile(r'([ক-হা-ড়a-dA-D১-৪1-4][\)\.]\s*[^\n]+)', re.MULTILINE)
+        # Fix: Use explicit Bangla MCQ options instead of invalid range
+        self.mcq_pattern = re.compile(r'([কখগঘঙচছজঝঞটঠডঢণতথদধনপফবভমযরলশষসহড়ঢ়য়a-dA-D১-৪1-4][\)\. ]\s*[^\n]+)', re.MULTILINE)
         
         logger.info(f"TextPreprocessor initialized with chunk_size={chunk_size}, "
                    f"overlap={chunk_overlap}, min_size={min_chunk_size}")
@@ -103,7 +104,7 @@ class TextPreprocessor:
                 try:
                     detected = detect(text)
                     return detected if detected in ['en', 'bn'] else 'en'
-                except LangDetectError:
+                except LangDetectException:
                     return 'en'  # Default to English
                     
         except Exception as e:

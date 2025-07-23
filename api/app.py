@@ -35,10 +35,46 @@ try:
     from ingestion.preprocess import preprocess_document
 except ImportError as e:
     logger.error(f"Import error: {e}")
-    # Create placeholder classes for testing
+    # Create placeholder classes and functions for testing
     class MultilingualRAGChain:
-        def ask(self, question): pass
-        def test_components(self): return {}
+        def ask(self, question, max_context_chunks=5, similarity_threshold=0.3, include_sources=True): 
+            # Mock RAGResponse structure
+            class MockResponse:
+                def __init__(self):
+                    self.answer = "System not fully initialized - dependencies missing. Please fix PyTorch installation."
+                    self.source_chunks = []
+                    self.query_language = "en"
+                    self.model_used = "none"
+                    self.confidence_score = 0.0
+            return MockResponse()
+        def test_components(self): 
+            return {"status": "imports_failed"}
+        def clear_memory(self):
+            pass
+        def get_conversation_history(self):
+            return []
+    
+    class TextChunkEmbedder:
+        def __init__(self, embedder): pass
+        def embed_chunks(self, chunks, batch_size=16): return []
+    
+    def create_embedder(model_name=None, cache_dir=None):
+        return None
+    
+    def create_vector_store(embedding_dimension=384, store_dir=None):
+        return None
+        
+    def build_vector_store_from_embeddings(embedding_data, store_dir=None):
+        return None
+        
+    def create_rag_chain(vector_store=None, embedder=None, model_name=None, base_url=None):
+        return MultilingualRAGChain()
+        
+    def extract_pdf_content(pdf_path):
+        return {"chunks": [], "metadata": {"error": "PDF extraction not available"}}
+        
+    def preprocess_document(document_data, chunk_size=512):
+        return []
 
 # Global variables for the RAG system
 rag_chain: Optional[MultilingualRAGChain] = None
@@ -48,6 +84,9 @@ system_status = {
     "vector_store_size": 0,
     "models_loaded": False
 }
+
+# Simple conversation counter
+conversation_counter = 0
 
 # Pydantic models for API
 class QuestionRequest(BaseModel):
@@ -137,6 +176,20 @@ async def initialize_rag_system():
             cache_dir=f"{CONFIG['cache_dir']}/embeddings"
         )
         
+        # Check if imports failed (embedder will be None)
+        if embedder is None:
+            logger.warning("Dependencies not available - running in limited mode")
+            rag_chain = create_rag_chain(None, None, CONFIG["model_name"], CONFIG["ollama_url"])
+            system_status.update({
+                "initialized": True,
+                "last_update": datetime.now().isoformat(),
+                "vector_store_size": 0,
+                "models_loaded": False,
+                "mode": "limited"
+            })
+            logger.info("RAG system initialized in limited mode")
+            return
+        
         # Check if vector store exists
         vector_store_path = Path(CONFIG["vector_store_dir"]) / "faiss_index.idx"
         
@@ -173,9 +226,10 @@ async def initialize_rag_system():
                     store_dir=CONFIG["vector_store_dir"]
                 )
                 
-                # Save index
-                vector_store.save_index()
-                logger.info("Vector store created and saved")
+                # Save index only if vector_store is not None
+                if vector_store is not None:
+                    vector_store.save_index()
+                    logger.info("Vector store created and saved")
         
         # Create RAG chain
         logger.info("Initializing RAG chain...")
@@ -187,10 +241,11 @@ async def initialize_rag_system():
         )
         
         # Update system status
+        vector_size = vector_store.index.ntotal if vector_store and hasattr(vector_store, 'index') else 0
         system_status.update({
             "initialized": True,
             "last_update": datetime.now().isoformat(),
-            "vector_store_size": vector_store.index.ntotal,
+            "vector_store_size": vector_size,
             "models_loaded": True
         })
         
@@ -198,12 +253,15 @@ async def initialize_rag_system():
         
     except Exception as e:
         logger.error(f"Failed to initialize RAG system: {str(e)}")
+        # Create fallback RAG chain
+        rag_chain = create_rag_chain(None, None, CONFIG["model_name"], CONFIG["ollama_url"])
         system_status.update({
             "initialized": False,
-            "error": str(e),
-            "last_update": datetime.now().isoformat()
+            "last_update": datetime.now().isoformat(),
+            "vector_store_size": 0,
+            "models_loaded": False,
+            "error": str(e)
         })
-        raise
 
 def get_rag_chain() -> MultilingualRAGChain:
     """Dependency to get RAG chain instance"""
@@ -239,18 +297,37 @@ async def ask_question(
     """
     Ask a question to the RAG system
     """
+    global conversation_counter
     start_time = datetime.now()
     
     try:
         logger.info(f"Processing question: {request.question[:100]}...")
         
-        # Ask the RAG chain
-        response = chain.ask(
-            question=request.question,
-            max_context_chunks=request.max_chunks,
-            similarity_threshold=request.threshold,
-            include_sources=request.include_sources
-        )
+        # Increment conversation counter
+        conversation_counter += 1
+        
+        # Add timeout protection
+        import asyncio
+        
+        async def process_question():
+            # Ask the RAG chain
+            response = chain.ask(
+                question=request.question,
+                max_context_chunks=request.max_chunks,
+                similarity_threshold=request.threshold,
+                include_sources=request.include_sources
+            )
+            return response
+        
+        # Set timeout to 60 seconds
+        try:
+            response = await asyncio.wait_for(process_question(), timeout=60.0)
+        except asyncio.TimeoutError:
+            logger.error(f"Question processing timed out after 60 seconds")
+            raise HTTPException(
+                status_code=408,
+                detail="Question processing timed out. Please try a shorter or simpler question."
+            )
         
         # Calculate response time
         response_time = int((datetime.now() - start_time).total_seconds() * 1000)
@@ -265,8 +342,13 @@ async def ask_question(
             timestamp=datetime.now().isoformat()
         )
         
+    except HTTPException:
+        # Re-raise HTTP exceptions (like timeout)
+        raise
     except Exception as e:
         logger.error(f"Error processing question: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail=f"Error processing question: {str(e)}"
@@ -313,14 +395,36 @@ async def get_stats(chain: MultilingualRAGChain = Depends(get_rag_chain)):
     """
     Get system statistics
     """
+    global conversation_counter
     try:
-        vector_stats = chain.vector_store.get_statistics()
-        conversation_history = chain.get_conversation_history()
+        # Check if we have a real or placeholder chain
+        if hasattr(chain, 'vector_store') and chain.vector_store:
+            vector_stats = chain.vector_store.get_statistics()
+        else:
+            vector_stats = {
+                "total_vectors": 0, 
+                "total_chunks": 0, 
+                "embedding_dimension": 384, 
+                "index_size_mb": 0.0,
+                "status": "not_available"
+            }
+        
+        # Use simple counter for conversation count
+        conversation_count = conversation_counter
+        
+        # Try to get conversation history if available
+        if hasattr(chain, 'get_conversation_history'):
+            try:
+                conversation_history = chain.get_conversation_history()
+                if conversation_history and len(conversation_history) > conversation_count:
+                    conversation_count = len(conversation_history)
+            except:
+                pass  # Use simple counter as fallback
         
         return SystemStatsResponse(
             vector_store_stats=vector_stats,
             system_status=system_status,
-            conversation_count=len(conversation_history),
+            conversation_count=conversation_count,
             uptime_seconds=(datetime.now() - datetime.fromisoformat(
                 system_status.get("last_update", datetime.now().isoformat())
             )).total_seconds()
@@ -330,7 +434,7 @@ async def get_stats(chain: MultilingualRAGChain = Depends(get_rag_chain)):
         logger.error(f"Error getting stats: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error getting stats: {str(e)}"
+            detail=f"Error getting system stats: {str(e)}"
         )
 
 @app.get("/config")
@@ -349,8 +453,15 @@ async def clear_conversation_memory(chain: MultilingualRAGChain = Depends(get_ra
     """
     Clear conversation memory
     """
+    global conversation_counter
     try:
-        chain.clear_memory()
+        # Reset simple counter
+        conversation_counter = 0
+        
+        # Try to clear chain memory if available
+        if hasattr(chain, 'clear_memory'):
+            chain.clear_memory()
+        
         return {
             "message": "Conversation memory cleared successfully",
             "timestamp": datetime.now().isoformat()

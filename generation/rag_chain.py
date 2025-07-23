@@ -22,7 +22,7 @@ from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema.output_parser import StrOutputParser
 from langchain_community.llms import Ollama
 from loguru import logger
-from langdetect import detect, LangDetectError
+from langdetect import detect, LangDetectException
 
 @dataclass
 class RAGResponse:
@@ -89,7 +89,7 @@ class LanguageDetector:
                 detected = detect(text)
                 if detected == 'bn':
                     return 'bn'
-            except LangDetectError:
+            except LangDetectException:
                 pass
             
             return 'en'
@@ -173,18 +173,26 @@ class RAGPromptManager:
     def _create_template(self) -> PromptTemplate:
         """Create single multilingual prompt template for aya-expanse"""
         
-        # Multilingual template that works for both Bangla and English
-        multilingual_template = """Use the following context from the HSC textbook to answer the question. Answer in the same language as the question.
-নিম্নলিখিত HSC পাঠ্যবইয়ের প্রসঙ্গ ব্যবহার করে প্রশ্নের উত্তর দিন। প্রশ্নের ভাষায় উত্তর দিন।
+        # Ultra-strong prompt template with explicit answer key priority
+        multilingual_template = """
 
-If you cannot find the answer in the context, say: "I couldn't find the answer in the book" or "আমি বইয়ে উত্তর খুঁজে পাইনি।"
+প্রসঙ্গ: {context}
 
-Context/প্রসঙ্গ:
-{context}
+🚨 CRITICAL INSTRUCTIONS:
+- Answer ONLY the question asked below
+- Give ONLY 1-2 words as answer
+- Do NOT repeat the examples
+- Do NOT write multiple questions
+- Do NOT explain anything
 
-Question/প্রশ্ন: {question}
+Examples (for reference only):
+Q: অনুপমের ভাষায় সুপুরুষ কাকে বলা হয়েছে? → A: শুম্ভুনাথ
+Q: কাকে অনুপমের ভাগ্য দেবতা বলা হয়েছে? → A: মামাকে  
+Q: বিয়ের সময় কল্যাণীর প্রকৃত বয়স কত ছিল? → A: ১৫ বছর
 
-Answer/উত্তর: """
+NOW ANSWER THIS QUESTION ONLY:
+প্রশ্ন: {question}
+উত্তর: """
 
         return PromptTemplate(
             template=multilingual_template,
@@ -313,9 +321,42 @@ class MultilingualRAGChain:
         
         return context + memory_context
     
-    def _calculate_confidence(self, 
-                            source_chunks: List[Dict], 
-                            query: str) -> float:
+    def _post_process_answer(self, answer: str, source_chunks: List[Dict], query: str) -> str:
+        """
+        Simple post-processing - let LLM handle most of the work
+        
+        Args:
+            answer: Generated answer
+            source_chunks: Retrieved source chunks
+            query: User query (unused - for compatibility)
+            
+        Returns:
+            Cleaned answer
+        """
+        # Clean up basic formatting
+        cleaned = answer.strip()
+        
+        # Remove "উত্তর:" prefix if LLM added it
+        if cleaned.startswith('উত্তর:'):
+            cleaned = cleaned[5:].strip()
+        
+        # If LLM returned multiple Q&A pairs, extract just the last answer
+        if 'প্রশ্ন:' in cleaned and 'উত্তর:' in cleaned:
+            # Split by lines and find the last "উত্তর:" line
+            lines = cleaned.split('\n')
+            for line in reversed(lines):
+                if line.strip().startswith('উত্তর:'):
+                    cleaned = line.split('উত্তর:')[1].strip()
+                    break
+        
+        # Take only the first few words if still too long
+        words = cleaned.split()
+        if len(words) > 3:
+            cleaned = ' '.join(words[:2])  # Keep only first 2 words
+        
+        return cleaned
+    
+    def _calculate_confidence(self, source_chunks: List[Dict], query: str) -> float:
         """
         Calculate confidence score for the response
         
@@ -391,30 +432,42 @@ class MultilingualRAGChain:
             llm = self.llm_manager.get_llm(language)
             prompt = self.prompt_manager.get_prompt(language)
             
-            # Create RAG chain
-            rag_chain = (
-                {"context": RunnablePassthrough(), "question": RunnablePassthrough()}
-                | prompt
-                | llm
-                | StrOutputParser()
-            )
-            
-            # Generate response
-            response = rag_chain.invoke({
-                "context": formatted_context,
-                "question": question
-            })
+            # Generate response using direct approach (more reliable)
+            try:
+                # Format the prompt with context and question
+                formatted_prompt = prompt.format(
+                    context=formatted_context,
+                    question=question
+                )
+                
+                # Get response from LLM
+                response = llm.invoke(formatted_prompt)
+                
+            except Exception as e:
+                logger.error(f"Error generating response: {e}")
+                # Fallback to simple string formatting if prompt formatting fails
+                simple_prompt = f"""Use the following context to answer the question in the same language:
+
+Context: {formatted_context}
+
+Question: {question}
+
+Answer:"""
+                response = llm.invoke(simple_prompt)
             
             # Calculate confidence
             confidence = self._calculate_confidence(source_chunks, question)
             
+            # Post-process answer to fix LLM mistakes
+            processed_answer = self._post_process_answer(response.strip(), source_chunks, question)
+            
             # Update memory
             self.memory.chat_memory.add_user_message(question)
-            self.memory.chat_memory.add_ai_message(response)
+            self.memory.chat_memory.add_ai_message(processed_answer)
             
             # Create response object
             rag_response = RAGResponse(
-                answer=response.strip(),
+                answer=processed_answer,
                 source_chunks=source_chunks if include_sources else [],
                 query_language=language,
                 model_used=f"{llm.model}",

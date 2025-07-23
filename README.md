@@ -1,6 +1,6 @@
 # HSC Bangla RAG System
 
-A multilingual RAG (Retrieval-Augmented Generation) system for HSC educational content in **Bangla** and **English**. Optimized for HSC textbook structure with paragraphs → tables → MCQs → answer tables.
+A multilingual RAG (Retrieval-Augmented Generation) system for HSC educational content in **Bangla** and **English**. Features advanced OCR extraction for image-based PDFs and optimized retrieval for educational content.
 
 ## 🚀 Quick Start
 
@@ -38,16 +38,17 @@ streamlit run streamlit_app.py
 
 **✅ That's it!** Open http://localhost:8501 and start asking questions!
 
-## 📋 Sample Questions to Try (Based on HSC Textbook)
+## 📋 Sample Questions to Try
 
 **Bangla Questions:**
 - অনুপমের বয়স কত বছর?
 - অনুপমের মামার চরিত্রের বৈশিষ্ট্য কী?
-- গল্পে 'ফল্গুর বালির মতো' বলতে কী বোঝানো হয়েছে?
+- গল্পে কোন বিষয়গুলো আলোচিত হয়েছে?
 
 **English Questions:**
-- What is the main theme of 'Aparichita' story?
-- Who is Harish in the story and what role does he play?
+- What is the main theme of the story?
+- Describe the character development in the text
+- What are the key educational concepts discussed?
 - What does the gold testing scene reveal about the character dynamics?
 
 ## 🔧 System Features

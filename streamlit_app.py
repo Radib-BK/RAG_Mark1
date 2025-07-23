@@ -28,12 +28,20 @@ st.set_page_config(
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 def check_api_health():
-    """Check if the API server is running"""
+    """Check if the API server is running and healthy"""
     try:
-        response = requests.get(f"{API_URL}/health", timeout=5)
-        return response.status_code == 200
+        response = requests.get(f"{API_URL}/health", timeout=3)  # Reduced timeout
+        if response.status_code == 200:
+            health_data = response.json()
+            status = health_data.get("status", "unknown")
+            return status, health_data
+        return "offline", None
+    except requests.exceptions.Timeout:
+        return "timeout", None
+    except requests.exceptions.ConnectionError:
+        return "connection_error", None
     except:
-        return False
+        return "offline", None
 
 def ask_question(question: str, max_chunks: int = 5, threshold: float = 0.3, include_sources: bool = True):
     """Send question to RAG API"""
@@ -45,19 +53,24 @@ def ask_question(question: str, max_chunks: int = 5, threshold: float = 0.3, inc
             "include_sources": include_sources
         }
         
-        response = requests.post(f"{API_URL}/ask", json=payload, timeout=30)
+        response = requests.post(f"{API_URL}/ask", json=payload, timeout=120)
         
         if response.status_code == 200:
             return response.json(), None
+        elif response.status_code == 408:
+            return None, "⏰ Request timed out. Please try a shorter or simpler question."
+        elif response.status_code == 500:
+            error_detail = response.json().get("detail", "Internal server error")
+            return None, f"❌ Server error: {error_detail}"
         else:
-            return None, f"Error {response.status_code}: {response.text}"
+            return None, f"❌ Error {response.status_code}: {response.text}"
     
     except requests.exceptions.ConnectionError:
-        return None, "❌ Cannot connect to API server. Make sure it's running on http://localhost:8000"
+        return None, "❌ Cannot connect to API server. Please check if it's running on http://localhost:8000"
     except requests.exceptions.Timeout:
-        return None, "⏰ Request timeout. The question might be too complex."
+        return None, "⏰ Request timeout (120s). The question might be too complex or the server is overloaded."
     except Exception as e:
-        return None, f"❌ Error: {str(e)}"
+        return None, f"❌ Unexpected error: {str(e)}"
 
 def get_system_stats():
     """Get system statistics from API"""
@@ -87,14 +100,34 @@ def main():
         st.header("⚙️ Settings")
         
         # API Status
-        api_healthy = check_api_health()
-        if api_healthy:
+        api_status, health_data = check_api_health()
+        
+        if api_status == "healthy":
             st.success("✅ API Server Connected")
-        else:
+        elif api_status == "degraded":
+            st.warning("⚠️ API Server Degraded")
+            if health_data:
+                st.caption("Some components may not be fully functional")
+        elif api_status == "unhealthy":
+            st.error("❌ API Server Unhealthy")
+            if health_data:
+                st.caption("System initialized but has issues")
+            st.markdown("**Check server logs or restart:**")
+            st.code("python -m api.app", language="bash")
+        elif api_status == "timeout":
+            st.warning("⏳ API Server Slow")
+            st.caption("Server is responding slowly, questions may take longer")
+        elif api_status == "connection_error":
+            st.error("🔌 Connection Failed")
+            st.caption("Cannot connect to API server")
+            st.markdown("**Start the server:**")
+            st.code("python -m api.app", language="bash")
+        else:  # offline
             st.error("❌ API Server Offline")
             st.markdown("**Start the server:**")
             st.code("python -m api.app", language="bash")
-            st.stop()
+        
+        # Don't stop the app - let users try asking questions anyway
         
         # Configuration
         st.subheader("🔧 Query Settings")
@@ -154,51 +187,61 @@ def main():
         st.header("📈 Quick Stats")
         stats = get_system_stats()
         if stats:
-            st.metric("Total Vectors", stats['vector_store_stats']['total_vectors'])
-            st.metric("Conversations", stats['conversation_count'])
-            st.metric("Vector Store Size", f"{stats['vector_store_stats'].get('index_size_mb', 0):.1f} MB")
+            # Safely get stats with defaults
+            total_vectors = stats.get('vector_store_stats', {}).get('total_vectors', 0)
+            conversations = stats.get('conversation_count', 0)
+            index_size = stats.get('vector_store_stats', {}).get('index_size_mb', 0.0)
+            
+            st.metric("Total Vectors", total_vectors)
+            st.metric("Conversations", conversations)
+            st.metric("Vector Store Size", f"{index_size:.1f} MB")
     
     # Process question
     if ask_button and question.strip():
-        with st.spinner("🤔 Thinking..."):
-            start_time = time.time()
-            result, error = ask_question(question, max_chunks, threshold, include_sources)
-            elapsed_time = time.time() - start_time
-        
-        if error:
-            st.error(error)
-        elif result:
-            # Display answer
-            st.success("✅ Answer Generated")
+        # Quick API check before processing
+        quick_status, _ = check_api_health()
+        if quick_status in ["connection_error", "offline"]:
+            st.error("❌ Cannot connect to API server. Please start the server with: `python -m api.app`")
+        else:
+            with st.spinner("🤔 Thinking..."):
+                start_time = time.time()
+                result, error = ask_question(question, max_chunks, threshold, include_sources)
+                elapsed_time = time.time() - start_time
             
-            # Answer section
-            with st.container():
-                st.markdown("### 💬 Answer")
-                st.markdown(f"**{result['answer']}**")
+            if error:
+                st.error(error)
+            elif result:
+                # Display answer
+                st.success("✅ Answer Generated")
                 
-                # Metadata
-                col_meta1, col_meta2, col_meta3 = st.columns(3)
-                with col_meta1:
-                    st.metric("Language", result['query_language'])
-                with col_meta2:
-                    st.metric("Confidence", f"{result['confidence_score']:.2%}")
-                with col_meta3:
-                    st.metric("Response Time", f"{result['response_time_ms']} ms")
-            
-            # Sources section
-            if include_sources and result.get('sources'):
-                with st.expander("📚 Sources", expanded=False):
-                    for i, source in enumerate(result['sources']):
-                        st.markdown(f"**Source {i+1}** (Score: {source['score']:.3f})")
-                        st.markdown(f"*Page {source['metadata']['source_page']} - {source['metadata'].get('content_type', 'content')}*")
-                        st.text_area(
-                            f"Content {i+1}:", 
-                            source['content'][:500] + ("..." if len(source['content']) > 500 else ""),
-                            height=100,
-                            key=f"source_{i}",
-                            disabled=True
-                        )
-                        st.markdown("---")
+                # Answer section
+                with st.container():
+                    st.markdown("### 💬 Answer")
+                    st.markdown(f"**{result['answer']}**")
+                    
+                    # Metadata
+                    col_meta1, col_meta2, col_meta3 = st.columns(3)
+                    with col_meta1:
+                        st.metric("Language", result['query_language'])
+                    with col_meta2:
+                        st.metric("Confidence", f"{result['confidence_score']:.2%}")
+                    with col_meta3:
+                        st.metric("Response Time", f"{result['response_time_ms']} ms")
+                
+                # Sources section
+                if include_sources and result.get('sources'):
+                    with st.expander("📚 Sources", expanded=False):
+                        for i, source in enumerate(result['sources']):
+                            st.markdown(f"**Source {i+1}** (Score: {source['score']:.3f})")
+                            st.markdown(f"*Page {source['metadata']['source_page']} - {source['metadata'].get('content_type', 'content')}*")
+                            st.text_area(
+                                f"Content {i+1}:", 
+                                source['content'][:500] + ("..." if len(source['content']) > 500 else ""),
+                                height=100,
+                                key=f"source_{i}",
+                                disabled=True
+                            )
+                            st.markdown("---")
     
     elif ask_button:
         st.warning("⚠️ Please enter a question first!")
