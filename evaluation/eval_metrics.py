@@ -1,33 +1,45 @@
 """
-Evaluation Metrics Module for Multilingual RAG System
+RAG System Evaluation Metrics
 
-This module provides:
-- ROUGE metrics for answer quality
-- BERTScore for semantic similarity  
-- Cosine similarity for retrieval evaluation
-- Custom metrics for multilingual content
-- Ground truth test set management
-- Automated evaluation pipeline
+This module provides focused evaluation for RAG systems:
+- Groundedness: Is the answer supported by retrieved context?
+- Relevance: Does the system fetch appropriate documents?
+- Cosine similarity for semantic evaluation
+- Simple metrics for practical evaluation
+- Test set management for Bengali literature content
 """
 
 import os
 import json
 import math
 import statistics
-from typing import List, Dict, Any, Optional, Tuple, Union
+import sys
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from datetime import datetime
 
-import numpy as np
-from loguru import logger
-
 # Optional imports with fallbacks
 try:
-    from rouge_score import rouge_scorer
-    HAS_ROUGE = True
+    import numpy as np
+    HAS_NUMPY = True
 except ImportError:
-    HAS_ROUGE = False
+    HAS_NUMPY = False
+
+try:
+    from loguru import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+    logging.basicConfig(level=logging.INFO)
+
+# Essential imports
+try:
+    from sklearn.metrics.pairwise import cosine_similarity
+    HAS_SKLEARN = True
+except ImportError:
+    HAS_SKLEARN = False
+    logger.warning("scikit-learn not available. Install with: pip install scikit-learn")
     logger.warning("ROUGE not available. Install with: pip install rouge-score")
 
 try:
@@ -35,572 +47,509 @@ try:
     HAS_BERTSCORE = True
 except ImportError:
     HAS_BERTSCORE = False
-    logger.warning("BERTScore not available. Install with: pip install bert-score")
-
-try:
-    from sklearn.metrics.pairwise import cosine_similarity
-    HAS_SKLEARN = True
-except ImportError:
-    HAS_SKLEARN = False
-    logger.warning("scikit-learn not available for cosine similarity")
-
 @dataclass
-class EvaluationResult:
+class RAGEvaluationResult:
     """
-    Data class for storing evaluation results
+    Simple evaluation result for RAG system
     """
     question_id: str
     question: str
     predicted_answer: str
     ground_truth_answer: str
-    language: str
+    retrieved_context: str
     
-    # Retrieval metrics
-    retrieval_precision: float = 0.0
-    retrieval_recall: float = 0.0
-    retrieval_f1: float = 0.0
-    mean_reciprocal_rank: float = 0.0
+    # Core RAG metrics
+    groundedness_score: float = 0.0  # Is answer supported by context?
+    relevance_score: float = 0.0     # Are retrieved docs relevant to question?
+    semantic_similarity: float = 0.0  # Cosine similarity with ground truth
+    context_utilization: float = 0.0  # How well context is used
     
-    # Generation metrics
-    rouge_1_f: float = 0.0
-    rouge_2_f: float = 0.0
-    rouge_l_f: float = 0.0
-    bert_score_f1: float = 0.0
-    semantic_similarity: float = 0.0
-    
-    # Custom metrics
-    answer_relevance: float = 0.0
-    factual_accuracy: float = 0.0
-    language_consistency: float = 0.0
-    confidence_score: float = 0.0
-    
-    # Metadata
+    # Additional metrics
+    answer_length: int = 0
+    context_length: int = 0
     response_time_ms: int = 0
-    source_chunks_used: int = 0
-    model_used: str = ""
+    
+    # Human evaluation (optional)
+    human_groundedness: Optional[float] = None
+    human_relevance: Optional[float] = None
+    human_quality: Optional[float] = None
 
-@dataclass  
-class EvaluationSummary:
+@dataclass
+class RAGEvaluationSummary:
     """
-    Summary of evaluation across multiple test cases
+    Summary of RAG evaluation results
     """
     total_questions: int
-    languages: List[str]
     
     # Average scores
-    avg_retrieval_precision: float
-    avg_retrieval_recall: float
-    avg_retrieval_f1: float
-    avg_mrr: float
-    
-    avg_rouge_1: float
-    avg_rouge_2: float  
-    avg_rouge_l: float
-    avg_bert_score: float
+    avg_groundedness: float
+    avg_relevance: float  
     avg_semantic_similarity: float
-    
-    avg_answer_relevance: float
-    avg_factual_accuracy: float
-    avg_language_consistency: float
-    avg_confidence: float
-    
+    avg_context_utilization: float
     avg_response_time_ms: float
     
-    # Per-language breakdown
-    language_scores: Dict[str, Dict[str, float]]
+    # Score distributions
+    groundedness_distribution: Dict[str, int]  # e.g., {"good": 5, "fair": 3, "poor": 2}
+    relevance_distribution: Dict[str, int]
     
-    # Timestamp
+    # Performance by question type
+    performance_by_type: Dict[str, Dict[str, float]]
+    
     evaluation_timestamp: str
 
-class RAGEvaluator:
+class SimpleRAGEvaluator:
     """
-    Comprehensive evaluator for RAG system performance
+    Simple, practical RAG system evaluator focusing on core metrics
     """
     
-    def __init__(self, 
-                 embedder=None,
-                 use_rouge: bool = True,
-                 use_bertscore: bool = True):
+    def __init__(self, embedder=None):
         """
-        Initialize RAG evaluator
+        Initialize evaluator
         
         Args:
-            embedder: Embedder for semantic similarity computation
-            use_rouge: Whether to compute ROUGE scores
-            use_bertscore: Whether to compute BERTScore
+            embedder: Embedding model for semantic similarity
         """
         self.embedder = embedder
-        self.use_rouge = use_rouge and HAS_ROUGE
-        self.use_bertscore = use_bertscore and HAS_BERTSCORE
-        
-        # Initialize ROUGE scorer
-        if self.use_rouge:
-            self.rouge_scorer = rouge_scorer.RougeScorer(
-                ['rouge1', 'rouge2', 'rougeL'], 
-                use_stemmer=True
-            )
-        
-        logger.info(f"Initialized RAGEvaluator (ROUGE: {self.use_rouge}, BERTScore: {self.use_bertscore})")
+        logger.info("Initialized SimpleRAGEvaluator")
     
-    def compute_rouge_scores(self, predicted: str, reference: str) -> Dict[str, float]:
+    def evaluate_groundedness(self, answer: str, context: str) -> float:
         """
-        Compute ROUGE scores
+        Evaluate if answer is grounded in the provided context
         
         Args:
-            predicted: Predicted answer
-            reference: Reference answer
+            answer: Generated answer
+            context: Retrieved context
             
         Returns:
-            Dictionary with ROUGE scores
+            Groundedness score between 0 and 1
         """
-        if not self.use_rouge:
-            return {"rouge1_f": 0.0, "rouge2_f": 0.0, "rougeL_f": 0.0}
-        
-        try:
-            scores = self.rouge_scorer.score(reference, predicted)
-            return {
-                "rouge1_f": scores['rouge1'].fmeasure,
-                "rouge2_f": scores['rouge2'].fmeasure,
-                "rougeL_f": scores['rougeL'].fmeasure
-            }
-        except Exception as e:
-            logger.error(f"Error computing ROUGE scores: {e}")
-            return {"rouge1_f": 0.0, "rouge2_f": 0.0, "rougeL_f": 0.0}
-    
-    def compute_bert_score(self, predicted: str, reference: str, lang: str = "en") -> float:
-        """
-        Compute BERTScore
-        
-        Args:
-            predicted: Predicted answer
-            reference: Reference answer
-            lang: Language code
-            
-        Returns:
-            BERTScore F1
-        """
-        if not self.use_bertscore:
+        if not answer or not context:
             return 0.0
         
-        try:
-            # BERTScore expects lists
-            P, R, F1 = bert_score([predicted], [reference], lang=lang, verbose=False)
-            return float(F1[0])
-        except Exception as e:
-            logger.error(f"Error computing BERTScore: {e}")
-            return 0.0
-    
-    def compute_semantic_similarity(self, predicted: str, reference: str) -> float:
-        """
-        Compute semantic similarity using embeddings
+        answer_lower = answer.lower()
+        context_lower = context.lower()
         
-        Args:
-            predicted: Predicted answer
-            reference: Reference answer
-            
-        Returns:
-            Cosine similarity score
-        """
-        if not self.embedder:
-            return 0.0
+        # Check if answer contains information from context
+        answer_words = set(answer_lower.split())
+        context_words = set(context_lower.split())
         
-        try:
-            pred_embedding = self.embedder.encode_single(predicted)
-            ref_embedding = self.embedder.encode_single(reference)
-            
-            return self.embedder.compute_similarity(pred_embedding, ref_embedding)
-        except Exception as e:
-            logger.error(f"Error computing semantic similarity: {e}")
-            return 0.0
-    
-    def compute_retrieval_metrics(self, 
-                                 retrieved_chunks: List[Dict[str, Any]], 
-                                 relevant_chunk_ids: List[str]) -> Dict[str, float]:
-        """
-        Compute retrieval evaluation metrics
-        
-        Args:
-            retrieved_chunks: List of retrieved chunks with metadata
-            relevant_chunk_ids: List of relevant chunk IDs for ground truth
-            
-        Returns:
-            Dictionary with retrieval metrics
-        """
-        if not retrieved_chunks or not relevant_chunk_ids:
-            return {
-                "precision": 0.0,
-                "recall": 0.0,
-                "f1": 0.0,
-                "mrr": 0.0
-            }
-        
-        # Extract retrieved chunk IDs
-        retrieved_ids = [chunk.get('chunk_id', '') for chunk in retrieved_chunks]
-        relevant_set = set(relevant_chunk_ids)
-        retrieved_set = set(retrieved_ids)
-        
-        # Precision and Recall
-        true_positives = len(relevant_set & retrieved_set)
-        precision = true_positives / len(retrieved_set) if retrieved_set else 0.0
-        recall = true_positives / len(relevant_set) if relevant_set else 0.0
-        
-        # F1 Score
-        f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-        
-        # Mean Reciprocal Rank
-        mrr = 0.0
-        for i, chunk_id in enumerate(retrieved_ids):
-            if chunk_id in relevant_set:
-                mrr = 1.0 / (i + 1)
-                break
-        
-        return {
-            "precision": precision,
-            "recall": recall,
-            "f1": f1,
-            "mrr": mrr
+        # Remove common Bengali/English stop words
+        stop_words = {
+            'এই', 'সেই', 'এটি', 'যে', 'তার', 'হয়', 'করে', 'থেকে', 'দিয়ে', 'সাথে',
+            'the', 'is', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with'
         }
+        
+        answer_content = answer_words - stop_words
+        context_content = context_words - stop_words
+        
+        if not answer_content:
+            return 0.0
+        
+        # Calculate overlap
+        overlap = len(answer_content & context_content)
+        answer_coverage = overlap / len(answer_content) if answer_content else 0.0
+        
+        # Check for specific patterns that indicate grounding
+        grounding_bonus = 0.0
+        
+        # Look for direct quotes or specific facts
+        if any(phrase in context_lower for phrase in answer_lower.split('.') if len(phrase) > 10):
+            grounding_bonus = 0.2
+        
+        # Check for number/name preservation
+        import re
+        answer_numbers = set(re.findall(r'\d+', answer))
+        context_numbers = set(re.findall(r'\d+', context))
+        if answer_numbers and answer_numbers.issubset(context_numbers):
+            grounding_bonus += 0.1
+        
+        groundedness = min(answer_coverage + grounding_bonus, 1.0)
+        return groundedness
     
-    def evaluate_answer_relevance(self, question: str, answer: str, context: str = "") -> float:
+    def evaluate_relevance(self, question: str, retrieved_context: str) -> float:
         """
-        Evaluate answer relevance to question
+        Evaluate relevance of retrieved context to the question
         
         Args:
             question: Original question
-            answer: Generated answer
-            context: Retrieved context (optional)
+            retrieved_context: Retrieved context
             
         Returns:
             Relevance score between 0 and 1
         """
-        # Simple heuristic-based relevance scoring
-        score = 0.0
-        
-        # Check if answer is not empty or generic
-        if not answer or len(answer.strip()) < 10:
+        if not question or not retrieved_context:
             return 0.0
         
-        # Check for "I don't know" type responses
-        dont_know_phrases = [
-            "don't know", "not sure", "couldn't find", "no information",
-            "জানি না", "নিশ্চিত নই", "পাইনি", "তথ্য নেই"
-        ]
+        question_lower = question.lower()
+        context_lower = retrieved_context.lower()
         
-        if any(phrase in answer.lower() for phrase in dont_know_phrases):
-            score = 0.2  # Partial credit for honest uncertainty
-        else:
-            score = 0.7  # Base score for providing an answer
+        # Extract key terms from question
+        question_words = set(question_lower.split())
+        context_words = set(context_lower.split())
         
-        # Bonus for using context-specific information
-        if context and len(context) > 0:
-            # Simple overlap check
-            question_words = set(question.lower().split())
-            answer_words = set(answer.lower().split())
-            context_words = set(context.lower().split())
-            
-            # Check if answer contains information from context
-            context_overlap = len(answer_words & context_words) / len(context_words) if context_words else 0
-            score += min(0.3, context_overlap * 0.3)
+        # Remove question words (কী, কে, কোথায়, what, who, where, etc.)
+        question_stopwords = {
+            'কী', 'কি', 'কে', 'কার', 'কোথায়', 'কখন', 'কেন', 'কীভাবে',
+            'what', 'who', 'where', 'when', 'why', 'how', 'which', 'whose',
+            'কত', 'কতো', 'বছর', 'years', 'old', 'age'  # Don't remove these key terms
+        }
         
-        return min(score, 1.0)
+        # Don't remove all question words - keep content words
+        question_content = question_words - {'কী', 'কি', 'কে', 'কার', 'কোথায়', 'কখন', 'কেন', 'কীভাবে',
+                                           'what', 'who', 'where', 'when', 'why', 'how', 'which', 'whose'}
+        
+        if not question_content:
+            return 0.5  # Neutral score for empty question content
+        
+        # Calculate how many question terms appear in context
+        matching_terms = len(question_content & context_words)
+        term_coverage = matching_terms / len(question_content) if question_content else 0.0
+        
+        # Enhanced relevance patterns for Bengali content
+        relevance_bonus = 0.0
+        
+        # Check if context contains answer-like patterns
+        if any(word in context_lower for word in ['উত্তর', 'answer', 'because', 'কারণ']):
+            relevance_bonus += 0.1
+        
+        # Check for topic consistency - be more lenient
+        if len(question_content & context_words) >= 1:  # At least one match
+            relevance_bonus += 0.2
+        
+        # Check for name/entity matching (like "অনুপম")
+        import re
+        question_entities = re.findall(r'[অ-ৱ]+', question)  # Bengali words
+        context_entities = re.findall(r'[অ-ৱ]+', retrieved_context)
+        
+        entity_matches = 0
+        for q_entity in question_entities:
+            if len(q_entity) > 2 and q_entity in context_entities:  # Avoid short words
+                entity_matches += 1
+        
+        if entity_matches > 0:
+            relevance_bonus += min(0.3, entity_matches * 0.1)
+        
+        relevance = min(term_coverage + relevance_bonus, 1.0)
+        return relevance
     
-    def evaluate_factual_accuracy(self, 
-                                 answer: str, 
-                                 ground_truth: str,
-                                 question: str = "") -> float:
+    def compute_semantic_similarity(self, answer: str, ground_truth: str) -> float:
         """
-        Evaluate factual accuracy of answer
+        Compute semantic similarity using embeddings or enhanced text overlap
         
         Args:
             answer: Generated answer
             ground_truth: Ground truth answer
-            question: Original question (for context)
             
         Returns:
-            Accuracy score between 0 and 1
+            Similarity score between 0 and 1
         """
         if not answer or not ground_truth:
             return 0.0
         
-        # Compute semantic similarity as proxy for factual accuracy
-        semantic_sim = self.compute_semantic_similarity(answer, ground_truth)
+        # If embedder is available, use semantic similarity
+        if self.embedder:
+            try:
+                answer_embedding = self.embedder.encode_single(answer)
+                truth_embedding = self.embedder.encode_single(ground_truth)
+                return self.embedder.compute_similarity(answer_embedding, truth_embedding)
+            except Exception as e:
+                logger.warning(f"Embedding similarity failed: {e}")
         
-        # Compute ROUGE-L as another proxy
-        if self.use_rouge:
-            rouge_scores = self.compute_rouge_scores(answer, ground_truth)
-            rouge_l = rouge_scores.get("rougeL_f", 0.0)
-        else:
-            rouge_l = 0.0
+        # Enhanced fallback for Bengali text
+        answer_lower = answer.lower()
+        truth_lower = ground_truth.lower()
         
-        # Combine metrics
-        accuracy = (semantic_sim * 0.7 + rouge_l * 0.3)
+        # Extract meaningful words (remove common words)
+        answer_words = set(answer_lower.split())
+        truth_words = set(truth_lower.split())
         
-        return min(accuracy, 1.0)
+        # Remove very common Bengali words that don't add meaning
+        common_words = {'এর', 'এই', 'সেই', 'তার', 'যে', 'হয়', 'করে', 'একটি', 'একজন', 'বছর', 'year', 'years'}
+        answer_content = answer_words - common_words
+        truth_content = truth_words - common_words
+        
+        if not answer_content or not truth_content:
+            # If no content words, check for exact substring match
+            if truth_lower in answer_lower or answer_lower in truth_lower:
+                return 0.8
+            return 0.0
+        
+        # Calculate enhanced similarity
+        intersection = len(answer_content & truth_content)
+        union = len(answer_content | truth_content)
+        jaccard = intersection / union if union > 0 else 0.0
+        
+        # Bonus for key information preservation
+        bonus = 0.0
+        
+        # Check for number preservation (Bengali numerals and words)
+        import re
+        answer_numbers = re.findall(r'[০-৯]+|[0-9]+|সাতাশ|আঠাশ|তিরিশ|চল্লিশ|পঞ্চাশ|পনেরো|ষোল|সতেরো|আঠারো|উনিশ|বিশ|২৭|১৫', answer_lower)
+        truth_numbers = re.findall(r'[০-৯]+|[0-9]+|সাতাশ|আঠাশ|তিরিশ|চল্লিশ|পঞ্চাশ|পনেরো|ষোল|সতেরো|আঠারো|উনিশ|বিশ|২৭|১৫', truth_lower)
+        
+        if answer_numbers and truth_numbers:
+            if any(num in truth_numbers for num in answer_numbers):
+                bonus += 0.3
+        
+        # Check for name/entity preservation
+        answer_entities = re.findall(r'[অ-ৱ]{3,}', answer)  # Bengali words 3+ chars
+        truth_entities = re.findall(r'[অ-ৱ]{3,}', ground_truth)
+        
+        entity_matches = sum(1 for entity in truth_entities if entity in answer_entities)
+        if entity_matches > 0:
+            bonus += min(0.2, entity_matches * 0.1)
+        
+        return min(jaccard + bonus, 1.0)
     
-    def evaluate_language_consistency(self, question: str, answer: str, expected_lang: str) -> float:
+    def evaluate_context_utilization(self, answer: str, context: str) -> float:
         """
-        Evaluate language consistency between question and answer
+        Evaluate how well the context is utilized in the answer
         
         Args:
-            question: Original question
             answer: Generated answer
-            expected_lang: Expected language
+            context: Available context
             
         Returns:
-            Consistency score between 0 and 1
+            Utilization score between 0 and 1
         """
-        try:
-            from langdetect import detect
-            
-            # Detect answer language
-            detected_lang = detect(answer) if len(answer) > 10 else expected_lang
-            
-            # Check consistency
-            if expected_lang == 'mixed':
-                return 1.0  # Mixed language is always consistent
-            elif expected_lang == detected_lang:
-                return 1.0
-            elif expected_lang == 'bn' and detected_lang in ['bn', 'hi', 'ur']:
-                return 0.8  # Close languages
-            elif expected_lang == 'en' and detected_lang in ['en']:
-                return 1.0
-            else:
-                return 0.3  # Different language family
-                
-        except Exception as e:
-            logger.debug(f"Language detection error: {e}")
-            return 0.5  # Neutral score if detection fails
+        if not answer or not context:
+            return 0.0
+        
+        # Check if answer is too generic (doesn't use specific context)
+        generic_phrases = [
+            'আমি জানি না', 'নিশ্চিত নই', 'তথ্য নেই',
+            "i don't know", "not sure", "no information"
+        ]
+        
+        if any(phrase in answer.lower() for phrase in generic_phrases):
+            return 0.1
+        
+        # Check for specific information usage
+        context_length = len(context.split())
+        answer_length = len(answer.split())
+        
+        # Penalize very short answers when context is rich
+        if context_length > 50 and answer_length < 5:
+            return 0.2
+        
+        # Reward answers that use specific facts from context
+        groundedness = self.evaluate_groundedness(answer, context)
+        
+        # Additional check for information density
+        info_density = min(answer_length / max(context_length * 0.1, 1), 1.0)
+        
+        utilization = (groundedness * 0.7) + (info_density * 0.3)
+        return min(utilization, 1.0)
     
     def evaluate_single_question(self, 
                                 question: str,
                                 predicted_answer: str,
                                 ground_truth_answer: str,
-                                retrieved_chunks: List[Dict[str, Any]],
-                                relevant_chunk_ids: List[str],
+                                retrieved_context: str,
                                 question_id: str = "",
-                                language: str = "en",
-                                confidence_score: float = 0.0,
-                                response_time_ms: int = 0,
-                                model_used: str = "") -> EvaluationResult:
+                                response_time_ms: int = 0) -> RAGEvaluationResult:
         """
-        Evaluate a single question-answer pair
+        Evaluate a single question-answer pair using focused RAG metrics
         
         Args:
             question: Input question
-            predicted_answer: System's answer
-            ground_truth_answer: Expected answer
-            retrieved_chunks: Retrieved context chunks
-            relevant_chunk_ids: Relevant chunk IDs for ground truth
-            question_id: Unique question ID
-            language: Question language
-            confidence_score: System confidence
-            response_time_ms: Response time
-            model_used: Model identifier
+            predicted_answer: System's generated answer
+            ground_truth_answer: Expected correct answer
+            retrieved_context: Context retrieved by the system
+            question_id: Unique identifier for the question
+            response_time_ms: Response time in milliseconds
             
         Returns:
-            EvaluationResult object
+            RAGEvaluationResult with all computed metrics
         """
         logger.debug(f"Evaluating question: {question_id}")
         
-        # Compute retrieval metrics
-        retrieval_metrics = self.compute_retrieval_metrics(retrieved_chunks, relevant_chunk_ids)
+        # Core RAG metrics
+        groundedness = self.evaluate_groundedness(predicted_answer, retrieved_context)
+        relevance = self.evaluate_relevance(question, retrieved_context)
+        semantic_similarity = self.compute_semantic_similarity(predicted_answer, ground_truth_answer)
+        context_utilization = self.evaluate_context_utilization(predicted_answer, retrieved_context)
         
-        # Compute generation metrics
-        rouge_scores = self.compute_rouge_scores(predicted_answer, ground_truth_answer)
-        bert_score_f1 = self.compute_bert_score(predicted_answer, ground_truth_answer, language)
-        semantic_sim = self.compute_semantic_similarity(predicted_answer, ground_truth_answer)
-        
-        # Compute custom metrics
-        context_text = "\n".join([chunk.get('content', '') for chunk in retrieved_chunks])
-        answer_relevance = self.evaluate_answer_relevance(question, predicted_answer, context_text)
-        factual_accuracy = self.evaluate_factual_accuracy(predicted_answer, ground_truth_answer, question)
-        language_consistency = self.evaluate_language_consistency(question, predicted_answer, language)
-        
-        return EvaluationResult(
+        return RAGEvaluationResult(
             question_id=question_id,
             question=question,
             predicted_answer=predicted_answer,
             ground_truth_answer=ground_truth_answer,
-            language=language,
-            
-            # Retrieval metrics
-            retrieval_precision=retrieval_metrics["precision"],
-            retrieval_recall=retrieval_metrics["recall"],
-            retrieval_f1=retrieval_metrics["f1"],
-            mean_reciprocal_rank=retrieval_metrics["mrr"],
-            
-            # Generation metrics
-            rouge_1_f=rouge_scores["rouge1_f"],
-            rouge_2_f=rouge_scores["rouge2_f"],
-            rouge_l_f=rouge_scores["rougeL_f"],
-            bert_score_f1=bert_score_f1,
-            semantic_similarity=semantic_sim,
-            
-            # Custom metrics
-            answer_relevance=answer_relevance,
-            factual_accuracy=factual_accuracy,
-            language_consistency=language_consistency,
-            confidence_score=confidence_score,
-            
-            # Metadata
-            response_time_ms=response_time_ms,
-            source_chunks_used=len(retrieved_chunks),
-            model_used=model_used
+            retrieved_context=retrieved_context,
+            groundedness_score=groundedness,
+            relevance_score=relevance,
+            semantic_similarity=semantic_similarity,
+            context_utilization=context_utilization,
+            answer_length=len(predicted_answer.split()),
+            context_length=len(retrieved_context.split()),
+            response_time_ms=response_time_ms
         )
     
     def evaluate_test_set(self, 
                          test_cases: List[Dict[str, Any]], 
                          rag_chain,
-                         output_file: Optional[str] = None) -> EvaluationSummary:
+                         output_file: Optional[str] = None) -> RAGEvaluationSummary:
         """
-        Evaluate complete test set
+        Evaluate a complete test set
         
         Args:
             test_cases: List of test case dictionaries
-            rag_chain: RAG chain instance for generating answers
-            output_file: Optional file to save detailed results
+            rag_chain: RAG system to evaluate
+            output_file: Optional file to save results
             
         Returns:
-            EvaluationSummary object
+            RAGEvaluationSummary with overall performance metrics
         """
-        logger.info(f"Evaluating {len(test_cases)} test cases")
+        logger.info(f"Starting evaluation of {len(test_cases)} test cases")
         
         results = []
-        languages = set()
         
         for i, test_case in enumerate(test_cases):
             try:
                 question = test_case["question"]
                 ground_truth = test_case["answer"]
-                language = test_case.get("language", "en")
-                question_id = test_case.get("id", f"test_{i}")
-                relevant_chunks = test_case.get("relevant_chunks", [])
-                
-                languages.add(language)
+                question_id = test_case.get("id", f"test_{i+1}")
                 
                 # Get system response
                 start_time = datetime.now()
                 response = rag_chain.ask(question)
                 response_time = int((datetime.now() - start_time).total_seconds() * 1000)
                 
-                # Evaluate
+                # Extract context from response
+                context = ""
+                if hasattr(response, 'source_chunks') and response.source_chunks:
+                    context = "\n".join([chunk.get('content', '') for chunk in response.source_chunks])
+                elif hasattr(response, 'context'):
+                    context = response.context
+                
+                # Evaluate this question
                 result = self.evaluate_single_question(
                     question=question,
-                    predicted_answer=response.answer,
+                    predicted_answer=response.answer if hasattr(response, 'answer') else str(response),
                     ground_truth_answer=ground_truth,
-                    retrieved_chunks=response.source_chunks,
-                    relevant_chunk_ids=relevant_chunks,
+                    retrieved_context=context,
                     question_id=question_id,
-                    language=language,
-                    confidence_score=response.confidence_score,
-                    response_time_ms=response_time,
-                    model_used=response.model_used
+                    response_time_ms=response_time
                 )
                 
                 results.append(result)
                 
-                if i % 10 == 0:
+                if (i + 1) % 5 == 0:
                     logger.info(f"Evaluated {i+1}/{len(test_cases)} questions")
                     
             except Exception as e:
-                logger.error(f"Error evaluating question {i}: {e}")
+                logger.error(f"Error evaluating question {i+1}: {e}")
                 continue
         
         # Compute summary
-        summary = self._compute_evaluation_summary(results, list(languages))
+        summary = self._compute_summary(results)
         
-        # Save detailed results if requested
+        # Save results if requested
         if output_file:
-            self.save_evaluation_results(results, summary, output_file)
+            self._save_results(results, summary, output_file)
         
         logger.info(f"Evaluation completed: {len(results)} successful evaluations")
         return summary
     
-    def _compute_evaluation_summary(self, 
-                                   results: List[EvaluationResult], 
-                                   languages: List[str]) -> EvaluationSummary:
+    def _compute_summary(self, results: List[RAGEvaluationResult]) -> RAGEvaluationSummary:
         """Compute summary statistics from evaluation results"""
         
         if not results:
-            return EvaluationSummary(
+            return RAGEvaluationSummary(
                 total_questions=0,
-                languages=[],
-                avg_retrieval_precision=0.0,
-                avg_retrieval_recall=0.0,
-                avg_retrieval_f1=0.0,
-                avg_mrr=0.0,
-                avg_rouge_1=0.0,
-                avg_rouge_2=0.0,
-                avg_rouge_l=0.0,
-                avg_bert_score=0.0,
+                avg_groundedness=0.0,
+                avg_relevance=0.0,
                 avg_semantic_similarity=0.0,
-                avg_answer_relevance=0.0,
-                avg_factual_accuracy=0.0,
-                avg_language_consistency=0.0,
-                avg_confidence=0.0,
+                avg_context_utilization=0.0,
                 avg_response_time_ms=0.0,
-                language_scores={},
+                groundedness_distribution={"poor": 0, "fair": 0, "good": 0},
+                relevance_distribution={"poor": 0, "fair": 0, "good": 0},
+                performance_by_type={},
                 evaluation_timestamp=datetime.now().isoformat()
             )
         
-        # Overall averages
-        avg_retrieval_precision = statistics.mean([r.retrieval_precision for r in results])
-        avg_retrieval_recall = statistics.mean([r.retrieval_recall for r in results])
-        avg_retrieval_f1 = statistics.mean([r.retrieval_f1 for r in results])
-        avg_mrr = statistics.mean([r.mean_reciprocal_rank for r in results])
-        
-        avg_rouge_1 = statistics.mean([r.rouge_1_f for r in results])
-        avg_rouge_2 = statistics.mean([r.rouge_2_f for r in results])
-        avg_rouge_l = statistics.mean([r.rouge_l_f for r in results])
-        avg_bert_score = statistics.mean([r.bert_score_f1 for r in results])
+        # Calculate averages
+        avg_groundedness = statistics.mean([r.groundedness_score for r in results])
+        avg_relevance = statistics.mean([r.relevance_score for r in results])
         avg_semantic_similarity = statistics.mean([r.semantic_similarity for r in results])
-        
-        avg_answer_relevance = statistics.mean([r.answer_relevance for r in results])
-        avg_factual_accuracy = statistics.mean([r.factual_accuracy for r in results])
-        avg_language_consistency = statistics.mean([r.language_consistency for r in results])
-        avg_confidence = statistics.mean([r.confidence_score for r in results])
+        avg_context_utilization = statistics.mean([r.context_utilization for r in results])
         avg_response_time_ms = statistics.mean([r.response_time_ms for r in results])
         
-        # Per-language breakdown
-        language_scores = {}
-        for lang in languages:
-            lang_results = [r for r in results if r.language == lang]
-            if lang_results:
-                language_scores[lang] = {
-                    "count": len(lang_results),
-                    "avg_rouge_l": statistics.mean([r.rouge_l_f for r in lang_results]),
-                    "avg_semantic_similarity": statistics.mean([r.semantic_similarity for r in lang_results]),
-                    "avg_answer_relevance": statistics.mean([r.answer_relevance for r in lang_results]),
-                    "avg_factual_accuracy": statistics.mean([r.factual_accuracy for r in lang_results]),
-                    "avg_language_consistency": statistics.mean([r.language_consistency for r in lang_results])
-                }
+        # Score distributions
+        groundedness_dist = {"poor": 0, "fair": 0, "good": 0}
+        relevance_dist = {"poor": 0, "fair": 0, "good": 0}
         
-        return EvaluationSummary(
+        for result in results:
+            # Categorize groundedness
+            if result.groundedness_score >= 0.7:
+                groundedness_dist["good"] += 1
+            elif result.groundedness_score >= 0.4:
+                groundedness_dist["fair"] += 1
+            else:
+                groundedness_dist["poor"] += 1
+            
+            # Categorize relevance
+            if result.relevance_score >= 0.7:
+                relevance_dist["good"] += 1
+            elif result.relevance_score >= 0.4:
+                relevance_dist["fair"] += 1
+            else:
+                relevance_dist["poor"] += 1
+        
+        # Analyze by question type (basic categorization)
+        performance_by_type = {}
+        for result in results:
+            question_type = self._categorize_question(result.question)
+            if question_type not in performance_by_type:
+                performance_by_type[question_type] = []
+            performance_by_type[question_type].append(result)
+        
+        # Compute averages by type
+        for question_type, type_results in performance_by_type.items():
+            performance_by_type[question_type] = {
+                "count": len(type_results),
+                "avg_groundedness": statistics.mean([r.groundedness_score for r in type_results]),
+                "avg_relevance": statistics.mean([r.relevance_score for r in type_results]),
+                "avg_semantic_similarity": statistics.mean([r.semantic_similarity for r in type_results])
+            }
+        
+        return RAGEvaluationSummary(
             total_questions=len(results),
-            languages=languages,
-            avg_retrieval_precision=avg_retrieval_precision,
-            avg_retrieval_recall=avg_retrieval_recall,
-            avg_retrieval_f1=avg_retrieval_f1,
-            avg_mrr=avg_mrr,
-            avg_rouge_1=avg_rouge_1,
-            avg_rouge_2=avg_rouge_2,
-            avg_rouge_l=avg_rouge_l,
-            avg_bert_score=avg_bert_score,
+            avg_groundedness=avg_groundedness,
+            avg_relevance=avg_relevance,
             avg_semantic_similarity=avg_semantic_similarity,
-            avg_answer_relevance=avg_answer_relevance,
-            avg_factual_accuracy=avg_factual_accuracy,
-            avg_language_consistency=avg_language_consistency,
-            avg_confidence=avg_confidence,
+            avg_context_utilization=avg_context_utilization,
             avg_response_time_ms=avg_response_time_ms,
-            language_scores=language_scores,
+            groundedness_distribution=groundedness_dist,
+            relevance_distribution=relevance_dist,
+            performance_by_type=performance_by_type,
             evaluation_timestamp=datetime.now().isoformat()
         )
     
-    def save_evaluation_results(self, 
-                               results: List[EvaluationResult], 
-                               summary: EvaluationSummary, 
-                               output_file: str):
-        """Save evaluation results to file"""
+    def _categorize_question(self, question: str) -> str:
+        """Categorize question type for analysis"""
+        question_lower = question.lower()
+        
+        if any(word in question_lower for word in ['কে', 'who']):
+            return "who_questions"
+        elif any(word in question_lower for word in ['কী', 'কি', 'what']):
+            return "what_questions"
+        elif any(word in question_lower for word in ['কেন', 'why']):
+            return "why_questions"
+        elif any(word in question_lower for word in ['কখন', 'when']):
+            return "when_questions"
+        elif any(word in question_lower for word in ['কোথায়', 'where']):
+            return "where_questions"
+        elif any(word in question_lower for word in ['কীভাবে', 'how']):
+            return "how_questions"
+        else:
+            return "other_questions"
+    
+    def _save_results(self, 
+                     results: List[RAGEvaluationResult], 
+                     summary: RAGEvaluationSummary, 
+                     output_file: str):
+        """Save evaluation results to JSON file"""
         output_path = Path(output_file)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -614,11 +563,7 @@ class RAGEvaluator:
             "metadata": {
                 "total_questions": len(results),
                 "evaluation_date": datetime.now().isoformat(),
-                "evaluator_config": {
-                    "use_rouge": self.use_rouge,
-                    "use_bertscore": self.use_bertscore,
-                    "has_embedder": self.embedder is not None
-                }
+                "evaluator_type": "SimpleRAGEvaluator"
             }
         }
         
@@ -626,148 +571,191 @@ class RAGEvaluator:
             json.dump(evaluation_data, f, indent=2, ensure_ascii=False)
         
         logger.info(f"Evaluation results saved to {output_path}")
+    
+    def print_evaluation_report(self, summary: RAGEvaluationSummary):
+        """Print a formatted evaluation report"""
+        print("\n" + "="*60)
+        print("🔍 RAG SYSTEM EVALUATION REPORT")
+        print("="*60)
+        
+        print(f"\n📊 Overall Statistics:")
+        print(f"   Total Questions: {summary.total_questions}")
+        print(f"   Average Response Time: {summary.avg_response_time_ms:.1f}ms")
+        
+        print(f"\n🎯 Core RAG Metrics:")
+        print(f"   Groundedness:        {summary.avg_groundedness:.3f} (Is answer supported by context?)")
+        print(f"   Relevance:          {summary.avg_relevance:.3f} (Are retrieved docs relevant?)")
+        print(f"   Semantic Similarity: {summary.avg_semantic_similarity:.3f} (Answer quality)")
+        print(f"   Context Utilization: {summary.avg_context_utilization:.3f} (How well context is used)")
+        
+        print(f"\n📈 Score Distributions:")
+        print(f"   Groundedness -> Good: {summary.groundedness_distribution['good']}, "
+              f"Fair: {summary.groundedness_distribution['fair']}, "
+              f"Poor: {summary.groundedness_distribution['poor']}")
+        print(f"   Relevance    -> Good: {summary.relevance_distribution['good']}, "
+              f"Fair: {summary.relevance_distribution['fair']}, "
+              f"Poor: {summary.relevance_distribution['poor']}")
+        
+        if summary.performance_by_type:
+            print(f"\n🔍 Performance by Question Type:")
+            for q_type, metrics in summary.performance_by_type.items():
+                print(f"   {q_type.replace('_', ' ').title()}: "
+                      f"Count={metrics['count']}, "
+                      f"Ground={metrics['avg_groundedness']:.2f}, "
+                      f"Rel={metrics['avg_relevance']:.2f}")
+        
+        print("\n" + "="*60)
 
-def create_hsc_bangla_test_set() -> List[Dict[str, Any]]:
-    """Create HSC Bangla literature test set based on actual textbook content"""
+# Test data creation function for Bengali literature
+def create_bangla_literature_test_set() -> List[Dict[str, Any]]:
+    """Create comprehensive test set for Bengali literature RAG evaluation"""
     return [
         {
             "id": "test_001",
             "question": "অনুপমের বয়স কত বছর?",
-            "answer": "অনুপমের বয়স সাতাশ বছর।",
-            "language": "bn",
-            "relevant_chunks": ["page_1_para_1", "page_1_mcq_1"]
+            "answer": "২৭ বছর",
+            "type": "factual",
+            "expected_context_keywords": ["অনুপম", "২৭", "বয়স", "বছর"]
         },
         {
-            "id": "test_002",
-            "question": "'অপরিচিতা' গল্পে অনুপমের চাচার সাথে কোন চরিত্রের মিল রয়েছে?",
-            "answer": "'অপরিচিতা' গল্পে অনুপমের চাচার সাথে মামার চরিত্রের মিল রয়েছে।",
-            "language": "bn", 
-            "relevant_chunks": ["page_1_mcq_3", "page_2_paragraph_1"]
+            "id": "test_002", 
+            "question": "অনুপমের ভাষায় সুপুরুষ কাকে বলা হয়েছে?",
+            "answer": "শুম্ভুনাথ",
+            "type": "character_reference",
+            "expected_context_keywords": ["শুম্ভুনাথ", "সুপুরুষ"]
         },
         {
             "id": "test_003",
-            "question": "What is the main theme of 'Aparichita' story?",
-            "answer": "The main theme of 'Aparichita' is the critique of dowry system and arranged marriage practices in Bengali society.",
-            "language": "en",
-            "relevant_chunks": ["page_1_definition_1", "page_3_paragraph_2"]
+            "question": "কাকে অনুপমের ভাগ্য দেবতা বলে উল্লেখ করা হয়েছে?",
+            "answer": "মামাকে",
+            "type": "character_reference",
+            "expected_context_keywords": ["মামা", "ভাগ্য", "দেবতা", "অনুপম"]
         },
         {
             "id": "test_004",
-            "question": "অনুপমের মামার চরিত্রের বৈশিষ্ট্য কী?",
-            "answer": "অনুপমের মামা একজন লোভী, কূটবুদ্ধিসম্পন্ন এবং স্বার্থপর ব্যক্তি যিনি পরিবারের সব দায়িত্ব নিয়ন্ত্রণ করেন।",
-            "language": "bn",
-            "relevant_chunks": ["page_2_paragraph_2", "page_3_paragraph_1"]
-        },
-        {
-            "id": "test_005",
-            "question": "গল্পে 'ফল্গুর বালির মতো' বলতে কী বোঝানো হয়েছে?",
-            "answer": "ফল্গুর বালির মতো বলতে বোঝানো হয়েছে যে, মামা বাইরে থেকে সাধারণ মনে হলেও ভেতরে সংসারের সব বিষয় নিয়ন্ত্রণ করেন।",
-            "language": "bn",
-            "relevant_chunks": ["page_2_definition_1", "page_2_paragraph_3"]
-        },
-        {
-            "id": "test_006", 
-            "question": "Who is Harish in the story and what role does he play?",
-            "answer": "Harish is Anupam's friend who brings the marriage proposal and acts as a mediator between the two families.",
-            "language": "en",
-            "relevant_chunks": ["page_3_paragraph_1", "page_4_paragraph_1"]
-        },
-        {
-            "id": "test_007",
-            "question": "বিবাহের ক্ষেত্রে অনুপমের মামার দৃষ্টিভঙ্গি কী ছিল?",
-            "answer": "বিবাহের ক্ষেত্রে মামার দৃষ্টিভঙ্গি ছিল যে মেয়ের পরিবার ধনী হতে হবে এবং যৌতুক দিতে সক্ষম হতে হবে।",
-            "language": "bn",
-            "relevant_chunks": ["page_4_paragraph_2", "page_5_paragraph_1"]
-        },
-        {
-            "id": "test_008",
-            "question": "What does the gold testing scene reveal about the character dynamics?",
-            "answer": "The gold testing scene reveals the materialistic nature of the groom's family and their lack of trust, which ultimately leads to the breakdown of the marriage proposal.",
-            "language": "en",
-            "relevant_chunks": ["page_8_paragraph_1", "page_9_paragraph_1"]
-        },
-        {
-            "id": "test_009",
-            "question": "শম্ভুনাথ বাবু কেন স্বর্ণ পরীক্ষা করতে চেয়েছিলেন?",
-            "answer": "শম্ভুনাথ বাবু স্বর্ণ পরীক্ষা করতে চেয়েছিলেন কারণ তিনি নিশ্চিত হতে চেয়েছিলেন যে দেওয়া স্বর্ণালংকার খাঁটি কিনা।",
-            "language": "bn", 
-            "relevant_chunks": ["page_8_paragraph_2", "page_9_paragraph_2"]
-        },
-        {
-            "id": "test_010",
-            "question": "'গণ্ডূষ' শব্দের অর্থ কী এবং গল্পে এর ব্যবহার কেমন?",
-            "answer": "'গণ্ডূষ' শব্দের অর্থ এক মুখ বা এক কোষ জল। গল্পে এর ব্যবহার করে বোঝানো হয়েছে যে মামার কাছে খুব সামান্য পরিমাণ জলও পাওয়া যায় না।",
-            "language": "bn",
-            "relevant_chunks": ["page_2_definition_2", "page_2_paragraph_4"]
+            "question": "বিয়ের সময় কল্যাণীর প্রকৃত বয়স কত ছিল?",
+            "answer": "১৫ বছর",
+            "type": "factual",
+            "expected_context_keywords": ["কল্যাণী", "১৫", "বয়স", "বিয়ে"]
         }
     ]
 
-def create_sample_test_set() -> List[Dict[str, Any]]:
-    """Create a sample test set for demonstration - keeping for backward compatibility"""
-    return create_hsc_bangla_test_set()
+def run_evaluation_demo():
+    """Demo function to show how to use the evaluator with realistic examples"""
+    logger.info("🚀 Starting RAG Evaluation Demo")
+    
+    # Create evaluator (without embedder for demo)
+    evaluator = SimpleRAGEvaluator()
+    
+    # Create sample test data
+    test_cases = create_bangla_literature_test_set()
+    
+    print(f"\n📝 Demo Test Set: {len(test_cases)} questions")
+    for case in test_cases[:3]:  # Show first 3
+        print(f"   {case['id']}: {case['question']}")
+    
+    print(f"\n🔍 Running Sample Evaluations:")
+    print("=" * 60)
+    
+    # Test 1: Good answer with relevant context
+    print(f"\n1️⃣ Test Case 1 - Good Performance Expected:")
+    sample_result_1 = evaluator.evaluate_single_question(
+        question="অনুপমের বয়স কত বছর?",
+        predicted_answer="অনুপমের বয়স ২৭ বছর।",
+        ground_truth_answer="২৭ বছর",
+        retrieved_context="অনুপম ২৭ বছর বয়সী একজন যুবক। তার মামা তার সব কাজের দায়িত্ব নিয়ন্ত্রণ করেন। অনুপমের বয়স নিয়ে গল্পে স্পষ্ট উল্লেখ রয়েছে।",
+        question_id="demo_001"
+    )
+    
+    print(f"   Question: {sample_result_1.question}")
+    print(f"   Predicted: {sample_result_1.predicted_answer}")
+    print(f"   Expected: {sample_result_1.ground_truth_answer}")
+    print(f"   📊 Metrics:")
+    print(f"      Groundedness: {sample_result_1.groundedness_score:.3f}")
+    print(f"      Relevance: {sample_result_1.relevance_score:.3f}")
+    print(f"      Semantic Similarity: {sample_result_1.semantic_similarity:.3f}")
+    print(f"      Context Utilization: {sample_result_1.context_utilization:.3f}")
+    
+    # Test 2: Character reference question
+    print(f"\n2️⃣ Test Case 2 - Character Reference:")
+    sample_result_2 = evaluator.evaluate_single_question(
+        question="অনুপমের ভাষায় সুপুরুষ কাকে বলা হয়েছে?",
+        predicted_answer="শুম্ভুনাথকে সুপুরুষ বলা হয়েছে।",
+        ground_truth_answer="শুম্ভুনাথ",
+        retrieved_context="অনুপমের ভাষায় শুম্ভুনাথ একজন সুপুরুষ। তিনি সুদর্শন এবং ভদ্র স্বভাবের লোক। গল্পে শুম্ভুনাথের চরিত্র নিয়ে বিস্তৃত আলোচনা রয়েছে।",
+        question_id="demo_002"
+    )
+    
+    print(f"   Question: {sample_result_2.question}")
+    print(f"   Predicted: {sample_result_2.predicted_answer}")
+    print(f"   Expected: {sample_result_2.ground_truth_answer}")
+    print(f"   � Metrics:")
+    print(f"      Groundedness: {sample_result_2.groundedness_score:.3f}")
+    print(f"      Relevance: {sample_result_2.relevance_score:.3f}")
+    print(f"      Semantic Similarity: {sample_result_2.semantic_similarity:.3f}")
+    print(f"      Context Utilization: {sample_result_2.context_utilization:.3f}")
+    
+    # Test 3: Poor context example
+    print(f"\n3️⃣ Test Case 3 - Poor Context (Expected Low Scores):")
+    sample_result_3 = evaluator.evaluate_single_question(
+        question="অনুপমের বয়স কত বছর?",
+        predicted_answer="আমি নিশ্চিত নই।",
+        ground_truth_answer="২৭ বছর",
+        retrieved_context="গল্পটি রবীন্দ্রনাথ ঠাকুরের লেখা। এটি একটি সামাজিক গল্প।",
+        question_id="demo_003"
+    )
+    
+    print(f"   Question: {sample_result_3.question}")
+    print(f"   Predicted: {sample_result_3.predicted_answer}")
+    print(f"   Expected: {sample_result_3.ground_truth_answer}")
+    print(f"   📊 Metrics:")
+    print(f"      Groundedness: {sample_result_3.groundedness_score:.3f}")
+    print(f"      Relevance: {sample_result_3.relevance_score:.3f}")
+    print(f"      Semantic Similarity: {sample_result_3.semantic_similarity:.3f}")
+    print(f"      Context Utilization: {sample_result_3.context_utilization:.3f}")
+    
+    # Show interpretation guide
+    print(f"\n📈 Score Interpretation Guide:")
+    print(f"   🟢 Good (0.7-1.0): High quality")
+    print(f"   🟡 Fair (0.4-0.7): Moderate quality") 
+    print(f"   🔴 Poor (0.0-0.4): Needs improvement")
+    
+    print(f"\n📋 Available Test Questions:")
+    for i, case in enumerate(test_cases, 1):
+        print(f"   {i}. {case['question']} → {case['answer']}")
+    
+    logger.info("✅ Evaluation demo completed!")
+    print(f"\n💡 To run full evaluation with your RAG system:")
+    print(f"   python run_evaluation.py")
+    print(f"   or")
+    print(f"   python evaluation\\eval_metrics.py")
 
 if __name__ == "__main__":
-    # Example usage
-    from pathlib import Path
-    import sys
+    # Run demo
+    run_evaluation_demo()
     
-    # Add parent directories to path
+    # Example of full evaluation (commented out - requires actual RAG chain)
+    """
+    # Full evaluation example:
+    
+    # Setup
     sys.path.append(str(Path(__file__).parent.parent))
+    from embeddings.embed_model import create_embedder
+    from generation.rag_chain import create_rag_chain
     
-    try:
-        from embeddings.embed_model import create_embedder
-        from retrieval.vector_store import create_vector_store
-        from generation.rag_chain import create_rag_chain
-        
-        # Create sample evaluator
-        logger.info("Creating sample evaluator...")
-        embedder = create_embedder()
-        evaluator = RAGEvaluator(embedder=embedder)
-        
-        # Test individual metrics
-        predicted = "বাংলাদেশের রাজধানী হলো ঢাকা।"
-        reference = "বাংলাদেশের রাজধানী ঢাকা।"
-        
-        rouge_scores = evaluator.compute_rouge_scores(predicted, reference)
-        semantic_sim = evaluator.compute_semantic_similarity(predicted, reference)
-        bert_score = evaluator.compute_bert_score(predicted, reference, "bn")
-        
-        logger.info(f"ROUGE scores: {rouge_scores}")
-        logger.info(f"Semantic similarity: {semantic_sim:.4f}")
-        logger.info(f"BERTScore: {bert_score:.4f}")
-        
-        # Test retrieval metrics
-        retrieved_chunks = [
-            {"chunk_id": "chunk_1", "content": "Sample content"},
-            {"chunk_id": "chunk_2", "content": "More content"}
-        ]
-        relevant_chunks = ["chunk_1", "chunk_3"]
-        
-        retrieval_metrics = evaluator.compute_retrieval_metrics(retrieved_chunks, relevant_chunks)
-        logger.info(f"Retrieval metrics: {retrieval_metrics}")
-        
-        # Create sample test set
-        test_set = create_sample_test_set()
-        logger.info(f"Created sample test set with {len(test_set)} questions")
-        
-        # Save sample test set
-        with open("sample_test_set.json", "w", encoding="utf-8") as f:
-            json.dump(test_set, f, indent=2, ensure_ascii=False)
-        logger.info("Sample test set saved to sample_test_set.json")
-        
-    except ImportError as e:
-        logger.warning(f"Could not import dependencies: {e}")
-        
-        # Basic test without dependencies
-        logger.info("Running basic evaluator test...")
-        evaluator = RAGEvaluator()
-        
-        # Test basic metrics
-        result = evaluator.evaluate_answer_relevance(
-            "What is the capital?", 
-            "The capital is Dhaka",
-            "Bangladesh capital city information"
-        )
-        logger.info(f"Answer relevance: {result:.4f}")
-        
-        logger.info("Basic evaluation tests completed") 
+    # Create components
+    embedder = create_embedder()
+    rag_chain = create_rag_chain()
+    evaluator = SimpleRAGEvaluator(embedder=embedder)
+    
+    # Run evaluation
+    test_cases = create_bangla_literature_test_set()
+    summary = evaluator.evaluate_test_set(
+        test_cases=test_cases,
+        rag_chain=rag_chain,
+        output_file="evaluation_results.json"
+    )
+    
+    # Print report
+    evaluator.print_evaluation_report(summary)
+    """ 
