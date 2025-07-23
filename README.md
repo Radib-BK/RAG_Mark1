@@ -277,226 +277,507 @@ curl -X GET "http://localhost:8000/health"
 #### Interactive Documentation
 Visit `http://localhost:8000/docs` for full Swagger UI documentation.
 
+---
+
 ## 📊 Evaluation Matrix
 
 ### RAG System Performance Assessment
 
-**Evaluation Methodology**: Comprehensive testing using 4 Bengali literature questions from HSC content, measuring core RAG metrics with ground truth answers.
+> **Evaluation Methodology**: Comprehensive testing using 4 Bengali literature questions from HSC content, measuring core RAG metrics with ground truth answers.
 
-#### **Overall Performance Score: 0.894/1.0**
+#### 🎯 **Overall Performance Score: 89.4/100**
 
-| Metric | Score | Performance Level | Description |
-|--------|-------|------------------|-------------|
-| **Groundedness** | **0.750** | Strong | Answer supported by retrieved context |
-| **Relevance** | **0.931** | Strong | Retrieved documents relevant to question |
-| **Semantic Similarity** | **1.000** | Perfect | Answer quality vs ground truth |
-| **Context Utilization** | **0.200** | Fair | Efficiency of context usage |
+<table>
+<tr>
+<th>Metric</th>
+<th>Score</th>
+<th>Performance Level</th>
+<th>Description</th>
+</tr>
+<tr>
+<td><strong>Groundedness</strong></td>
+<td><code>0.750</code></td>
+<td>🟢 Strong</td>
+<td>Answer supported by retrieved context</td>
+</tr>
+<tr>
+<td><strong>Relevance</strong></td>
+<td><code>0.931</code></td>
+<td>🟢 Strong</td>
+<td>Retrieved documents relevant to question</td>
+</tr>
+<tr>
+<td><strong>Semantic Similarity</strong></td>
+<td><code>1.000</code></td>
+<td>🎯 Perfect</td>
+<td>Answer quality vs ground truth</td>
+</tr>
+<tr>
+<td><strong>Context Utilization</strong></td>
+<td><code>0.200</code></td>
+<td>🟡 Fair</td>
+<td>Efficiency of context usage</td>
+</tr>
+</table>
 
-### Test Case Results
+### 📝 Test Case Results
+
+<details>
+<summary><strong>Click to view detailed test results</strong></summary>
 
 | Question ID | Question (Bengali) | Expected Answer | RAG Answer | Accuracy |
-|-------------|-------------------|----------------|------------|-----------|
-| **test_001** | অনুপমের বয়স কত বছর? | ২৭ বছর | ২৭ বছর | **100%** |
-| **test_002** | অনুপমের ভাষায় সুপুরুষ কাকে বলা হয়েছে? | শুম্ভুনাথ | শুম্ভুনাথ | **100%** |
-| **test_003** | কাকে অনুপমের ভাগ্য দেবতা বলে উল্লেখ করা হয়েছে? | মামাকে | মামাকে | **100%** |
-| **test_004** | বিয়ের সময় কল্যাণীর প্রকৃত বয়স কত ছিল? | ১৫ বছর | ১৫ বছর | **100%** |
+|:-----------:|:-------------------|:--------------:|:----------:|:--------:|
+| `test_001` | অনুপমের বয়স কত বছর? | ২৭ বছর | ২৭ বছর | ✅ **100%** |
+| `test_002` | অনুপমের ভাষায় সুপুরুষ কাকে বলা হয়েছে? | শুম্ভুনাথ | শুম্ভুনাথ | ✅ **100%** |
+| `test_003` | কাকে অনুপমের ভাগ্য দেবতা বলে উল্লেখ করা হয়েছে? | মামাকে | মামাকে | ✅ **100%** |
+| `test_004` | বিয়ের সময় কল্যাণীর প্রকৃত বয়স কত ছিল? | ১৫ বছর | ১৫ বছর | ✅ **100%** |
 
-### Detailed Score Breakdown
+</details>
 
-#### Groundedness Analysis (0.750)
-- **Strong (3/4)**: Answers well-supported by retrieved context
-- **Poor (1/4)**: One case where context didn't explicitly contain the answer
-- **Key Insight**: Strong evidence-based reasoning
+### 📈 Performance Analysis
 
-#### Relevance Analysis (0.931) 
-- **Strong (4/4)**: All retrieved documents highly relevant
-- **Average relevance scores**: 0.881-0.915 per question
-- **Key Insight**: Superior document retrieval capability
+#### 🔍 Groundedness Analysis (`0.750`)
+- ✅ **Strong (3/4)**: Answers well-supported by retrieved context
+- ⚠️ **Needs Improvement (1/4)**: One case where context didn't explicitly contain the answer
+- **Key Insight**: Strong evidence-based reasoning capabilities
 
-#### Semantic Similarity Analysis (1.000)
-- **Perfect Match**: All answers semantically identical to ground truth
-- **Bengali numeral handling**: Correctly processes ২৭, ১৫ 
-- **Character name preservation**: Accurate Bengali name recognition
-- **Key Insight**: Exceptional answer quality
+#### 🎯 Relevance Analysis (`0.931`) 
+- ✅ **Excellent (4/4)**: All retrieved documents highly relevant to questions
+- 📊 **Average relevance scores**: `0.881-0.915` per question
+- **Key Insight**: Superior document retrieval and matching capability
 
-### System Performance Characteristics
+#### 🔄 Semantic Similarity Analysis (`1.000`)
+- 🎯 **Perfect Match**: All answers semantically identical to ground truth
+- 🔢 **Bengali numeral handling**: Correctly processes `২৭`, `১৫` 
+- 👤 **Character name preservation**: Accurate Bengali name recognition
+- **Key Insight**: Exceptional answer quality and linguistic consistency
 
-#### **Retrieval Performance**
-- **Vector Store Size**: 251 documents indexed
-- **Retrieval Speed**: ~50ms average
-- **Context Chunks**: 5 chunks per query (avg 300 words each)
-- **Similarity Threshold**: 0.3 (optimized for Bengali content)
+### ⚡ System Performance Characteristics
 
-#### **Language Processing**
-- **Model Confidence**: 90.2-92.0% across test cases
-- **Language Detection**: 100% accuracy (Bengali)
-- **Model Used**: aya-expanse:8b (specialized multilingual LLM)
-- **Response Time**: 3.4-6.7 seconds per query
+#### 🗄️ **Retrieval Performance**
+```
+Vector Store Size:     251 documents indexed
+Retrieval Speed:       ~50ms average
+Context Chunks:        5 chunks per query (avg 300 words each)
+Similarity Threshold:  0.3 (optimized for Bengali content)
+```
 
-#### **Content Coverage**
-- **Document Type**: HSC Bengali literature (রবীন্দ্রনাথ ঠাকুর - অপরিচিতা)
-- **Question Types**: Factual (ages, numbers), Character references
-- **Context Quality**: High-relevance chunks with 0.841-0.915 similarity scores
-- **Source Attribution**: 100% traceable to original content
+#### 🧠 **Language Processing**
+```
+Model Confidence:      90.2-92.0% across test cases
+Language Detection:    100% accuracy (Bengali)
+Model Used:            aya-expanse:8b (specialized multilingual LLM)
+Response Time:         3.4-6.7 seconds per query
+```
 
-### Evaluation Insights
+#### 📚 **Content Coverage**
+```
+Document Type:         HSC Bengali literature (রবীন্দ্রনাথ ঠাকুর - অপরিচিতা)
+Question Types:        Factual (ages, numbers), Character references
+Context Quality:       High-relevance chunks with 0.841-0.915 similarity scores
+Source Attribution:    100% traceable to original content
+```
 
-#### **System Strengths**
-- **Perfect Factual Accuracy**: 100% correct answers for all test questions
-- **Strong Retrieval**: Consistently finds relevant source material
-- **Strong Bengali Support**: Handles complex Bengali literature questions
-- **Reliable Performance**: Consistent high-quality responses
+### 💪 System Strengths
 
-### Quality Metrics Summary
+- 🎯 **Perfect Factual Accuracy**: 100% correct answers for all test questions
+- 🔍 **Strong Retrieval**: Consistently finds relevant source material
+- 🇧🇩 **Excellent Bengali Support**: Handles complex Bengali literature questions
+- ⚡ **Reliable Performance**: Consistent high-quality responses across all test cases
 
-| Aspect | Result | Status |
-|--------|--------|---------|
-| **Answer Accuracy** | **4/4 (100%)** | Perfect |
-| **Language Consistency** | **4/4 (100%)** | Strong |
-| **Source Retrieval** | **4/4 (100%)** | Strong |
-| **Semantic Preservation** | **4/4 (100%)** | Strong |
-| **Bengali Number Handling** | **2/2 (100%)** | Strong |
-| **Character Name Recognition** | **2/2 (100%)** | Strong |
+### 📊 Quality Metrics Summary
+
+<table>
+<tr>
+<th>Aspect</th>
+<th>Result</th>
+<th>Status</th>
+</tr>
+<tr>
+<td>Answer Accuracy</td>
+<td><strong>4/4 (100%)</strong></td>
+<td>🎯 Perfect</td>
+</tr>
+<tr>
+<td>Language Consistency</td>
+<td><strong>4/4 (100%)</strong></td>
+<td>🟢 Strong</td>
+</tr>
+<tr>
+<td>Source Retrieval</td>
+<td><strong>4/4 (100%)</strong></td>
+<td>🟢 Strong</td>
+</tr>
+<tr>
+<td>Semantic Preservation</td>
+<td><strong>4/4 (100%)</strong></td>
+<td>🟢 Strong</td>
+</tr>
+<tr>
+<td>Bengali Number Handling</td>
+<td><strong>2/2 (100%)</strong></td>
+<td>🟢 Strong</td>
+</tr>
+<tr>
+<td>Character Name Recognition</td>
+<td><strong>2/2 (100%)</strong></td>
+<td>🟢 Strong</td>
+</tr>
+</table>
 
 
-## 🔍 Technical Methodology & Design Decisions
+---
+
+## Technical Methodology & Design Decisions
 
 ### 1. Text Extraction Method
 
 **Multi-Method Approach with OCR Fallback**
-- **Primary Tool: PDFPlumber** - Superior handling of complex layouts and tables
-- **Fallback 1: PyPDF2** - When PDFPlumber fails 
-- **Fallback 2: Pytesseract OCR** - For image-based content
-- **OCR Process**: Convert PDF pages to images (300 DPI) → Tesseract with Bengali+English language packs
-- **Intelligent Switching**: Auto-detects insufficient text extraction (<50 chars) and applies OCR to specific pages
 
-**Challenges faced**:
-  - Image-based PDF pages with poor text extraction
-  - Bengali Unicode normalization issues and separated diacritics
-  - Table extraction from complex layouts
-  - OCR accuracy for Bengali characters and mixed language content
+<table>
+<tr>
+<th>Method</th>
+<th>Purpose</th>
+<th>Implementation</th>
+</tr>
+<tr>
+<td><strong>Primary Tool: PDFPlumber</strong></td>
+<td>Superior handling of complex layouts and tables</td>
+<td>Layout-preserving extraction with table detection</td>
+</tr>
+<tr>
+<td><strong>Fallback 1: PyPDF2</strong></td>
+<td>When PDFPlumber fails</td>
+<td>Basic text extraction for standard PDFs</td>
+</tr>
+<tr>
+<td><strong>Fallback 2: Pytesseract OCR</strong></td>
+<td>For image-based content</td>
+<td>PDF → Images (300 DPI) → OCR with Bengali+English</td>
+</tr>
+<tr>
+<td><strong>Intelligent Switching</strong></td>
+<td>Auto-detects extraction quality</td>
+<td>Applies OCR when text yield < 50 characters</td>
+</tr>
+</table>
 
-- **Solutions implemented**:
-  - Hybrid extraction: `extract_with_ocr_fallback()` combining all methods
-  - Bengali-optimized OCR: `--oem 3 --psm 6 -l ben+eng` configuration
-  - Page-by-page OCR fallback for low-text pages
-  - Comprehensive Unicode normalization pipeline with FTFY
-  - OCR error correction for common Bengali character misrecognitions
-  - Structured table extraction with PDFPlumber
+#### Challenges & Solutions
+
+<details>
+<summary><strong>Challenges Faced</strong></summary>
+
+- **Image-based PDF pages** with poor text extraction
+- **Bengali Unicode normalization** issues and separated diacritics
+- **Table extraction** from complex layouts
+- **OCR accuracy** for Bengali characters and mixed language content
+
+</details>
+
+<details>
+<summary><strong>Solutions Implemented</strong></summary>
+
+```python
+# Key Implementation Features
+extract_with_ocr_fallback()           # Hybrid approach combining all methods
+--oem 3 --psm 6 -l ben+eng           # Bengali-optimized OCR configuration
+page_by_page_fallback()              # OCR only for insufficient pages
+comprehensive_unicode_normalization() # FTFY + custom Bengali fixes
+ocr_error_correction()               # Common Bengali character fixes
+structured_table_extraction()        # PDFPlumber table processing
+```
+
+</details>
 
 ### 2. Chunking Strategy
 
-**Method: HSC Structure-Aware Chunking with Content-Type Detection**
-- **Chunk size**: 512 characters (target) with 50-character overlap
-- **Minimum chunk size**: 100 characters (filters out short fragments)
-- **Strategy**: `hsc_structure` - Educational content optimized chunking
+**HSC Structure-Aware Chunking with Content-Type Detection**
 
-**Content-Type Aware Processing**:
-  - **Paragraphs & Definitions**: Grouped together for context preservation
-  - **MCQs & Answer Tables**: Isolated as separate chunks for precise retrieval
-  - **Tables**: Attached to preceding paragraph or standalone
-  - **Headings & Lists**: Individual chunks for navigation
+#### Configuration
+```python
+chunk_size = 512          # Target chunk size in characters
+chunk_overlap = 50        # Overlap between chunks in characters  
+min_chunk_size = 100      # Minimum chunk size (filters short fragments)
+strategy = "hsc_structure" # Educational content optimized chunking
+```
 
-**Intelligent Text Segmentation**:
-  - **Primary**: Paragraph boundaries (`\n\s*\n+` pattern)
-  - **Secondary**: Sentence-level splitting for oversized content  
-  - **Language-aware**: Different patterns for Bengali (।!?) vs English (.!?)
-  - **Overlap management**: 2-sentence overlap for context continuity
+#### Content-Type Processing Pipeline
 
-**Why it works for educational retrieval**:
-  - Preserves question-answer-explanation relationships
-  - Prevents MCQ options from being separated from questions
-  - Maintains semantic coherence within literature passages
-  - Optimal embedding model input size (512 chars ≈ 100-150 tokens)
+<table>
+<tr>
+<th>Content Type</th>
+<th>Processing Method</th>
+<th>Chunking Behavior</th>
+</tr>
+<tr>
+<td><strong>Paragraphs & Definitions</strong></td>
+<td>Grouped together using paragraph boundaries</td>
+<td>Context preservation with semantic grouping</td>
+</tr>
+<tr>
+<td><strong>MCQs & Answer Tables</strong></td>
+<td>Isolated as individual chunks</td>
+<td>Precise retrieval without option separation</td>
+</tr>
+<tr>
+<td><strong>Tables</strong></td>
+<td>Attached to preceding paragraph context</td>
+<td>Contextual linking with explanatory text</td>
+</tr>
+<tr>
+<td><strong>Headings & Lists</strong></td>
+<td>Individual chunks for navigation</td>
+<td>Structure preservation for document hierarchy</td>
+</tr>
+</table>
 
-**Faced Challenge**: When question sets and answer sets are far apart in the source document, this causes retrieval problems as questions and their corresponding answers end up in different chunks, leading to incomplete context during answer generation.
+#### Multi-Level Overlap Strategy
+
+<details>
+<summary><strong>Overlap Implementation Details</strong></summary>
+
+**Two-Tier Overlap System:**
+
+1. **Character-Level Overlap**: `50 characters` between adjacent chunks
+2. **Sentence-Level Overlap**: `2 sentences` for sentence-based chunking
+3. **Content-Aware Overlap**: Varies by content type (MCQs no overlap, paragraphs with overlap)
+
+```python
+# Sentence overlap implementation
+overlap_sentences = current_sentences[-2:] if len(current_sentences) > 1 else current_sentences
+current_chunk = " ".join(overlap_sentences + [sentence])
+```
+
+</details>
+
+#### Intelligent Text Segmentation
+
+<details>
+<summary><strong>HSC Structure-Aware Segmentation Logic</strong></summary>
+
+1. **Primary**: Content-type detection (`paragraph`, `mcq`, `answer_table`, `table`, `heading`, `list`)
+2. **Secondary**: Paragraph boundaries using `\n\s*\n+` pattern for text splitting
+3. **Tertiary**: Sentence-level splitting for oversized content with language-aware patterns
+   - **Bengali sentences**: Split on `।!?` patterns  
+   - **English sentences**: Split on `.!?` patterns
+4. **Overlap management**: 2-sentence overlap for context continuity in sentence chunking
+5. **Long text handling**: Automatic splitting when content exceeds 512 characters
+
+</details>
+
+#### Educational Content Optimization
+
+- **Question-Answer Preservation**: MCQs and answer tables kept as complete units
+- **Context Continuity**: Paragraph content grouped to maintain semantic flow  
+- **Table Integration**: Tables attached to preceding explanatory paragraphs
+- **Bengali Structure Recognition**: Handles Bengali question patterns (`প্রশ্ন`, MCQ options `ক)`, `খ)`, etc.)
+- **Optimal Embedding Size**: 512 characters ≈ 100-150 tokens for multilingual E5 model
+
+> **Known Challenge**: When question sets and answer keys are separated across distant pages in source documents, they end up in different chunks causing retrieval fragmentation. The system compensates with increased context retrieval (up to 5 chunks) to gather complete information.
 
 ### 3. Embedding Model
 
-**Model: intfloat/multilingual-e5-small**
-- **Dimensions**: 384
-- **Why chosen**:
-  - Excellent Bengali-English multilingual support
-  - Balanced performance vs resource usage
-  - Strong semantic understanding for educational content
-  - Small model size enables good performance on CPU without GPU requirements
-- **Meaning capture**:
-  - Cross-lingual semantic alignment
-  - Context-aware representations
-  - Fine-tuned on diverse multilingual data
+**Model: `intfloat/multilingual-e5-small`**
+
+<table>
+<tr>
+<th>Specification</th>
+<th>Value</th>
+<th>Rationale</th>
+</tr>
+<tr>
+<td><strong>Dimensions</strong></td>
+<td><code>384</code></td>
+<td>Balanced size for performance vs quality</td>
+</tr>
+<tr>
+<td><strong>Languages</strong></td>
+<td>Bengali + English</td>
+<td>Excellent multilingual support</td>
+</tr>
+<tr>
+<td><strong>Performance</strong></td>
+<td>CPU-optimized</td>
+<td>No GPU requirements for deployment</td>
+</tr>
+<tr>
+<td><strong>Domain</strong></td>
+<td>Educational content</td>
+<td>Strong semantic understanding</td>
+</tr>
+</table>
+
+#### Meaning Capture Capabilities
+- **Cross-lingual semantic alignment**: Maps Bengali and English concepts
+- **Context-aware representations**: Understands educational terminology
+- **Multilingual training**: Fine-tuned on diverse language pairs
 
 ### 4. Similarity Method & Storage
 
 **Vector Store: FAISS with Cosine Similarity**
-- **Storage setup**: Flat index for exact search
-- **Similarity method**: Cosine similarity
-- **Why chosen**:
-  - Efficient for medium-scale datasets (251 vectors)
-  - Excellent recall and precision
-  - Fast retrieval (<50ms average)
-- **Comparison process**:
-  - Query embedding → similarity search → top-k retrieval
-  - Threshold filtering (>0.3) for relevance
 
-### 5. Meaningful Query-Document Comparison
+#### Architecture
+```
+Storage Setup:     Flat index for exact search
+Similarity Method: Cosine similarity
+Index Type:        FAISS FlatIP (Inner Product)
+Normalization:     L2 normalized vectors
+```
 
-**Multi-stage approach**:
-1. **Language detection**: Routes to appropriate processing
-2. **Embedding normalization**: Ensures comparable vector spaces
-3. **Context expansion**: Retrieves 5 chunks for comprehensive context
-4. **Relevance scoring**: Combines similarity + content type weighting
+#### Performance Characteristics
+- **Dataset Scale**: Efficient for medium-scale (251 vectors)
+- **Recall & Precision**: Excellent performance metrics
+- **Retrieval Speed**: Sub-50ms average response time
+- **Relevance Filtering**: Threshold-based filtering (>0.3)
 
-**Handling vague/missing context**:
+#### Comparison Process
+1. **Query embedding** → Normalize vector
+2. **Similarity search** → FAISS inner product search  
+3. **Top-k retrieval** → Configurable result count
+4. **Threshold filtering** → Remove low-relevance results
+
+### 5. Query-Document Comparison
+
+#### Multi-Stage Processing Pipeline
+
+<table>
+<tr>
+<th>Stage</th>
+<th>Process</th>
+<th>Purpose</th>
+</tr>
+<tr>
+<td><strong>1. Language Detection</strong></td>
+<td>Route to appropriate processing</td>
+<td>Optimize for language-specific patterns</td>
+</tr>
+<tr>
+<td><strong>2. Embedding Normalization</strong></td>
+<td>Ensure comparable vector spaces</td>
+<td>Consistent similarity calculations</td>
+</tr>
+<tr>
+<td><strong>3. Context Expansion</strong></td>
+<td>Retrieve 5 chunks for context</td>
+<td>Comprehensive information gathering</td>
+</tr>
+<tr>
+<td><strong>4. Relevance Scoring</strong></td>
+<td>Combine similarity + content weighting</td>
+<td>Quality-based ranking</td>
+</tr>
+</table>
+
+#### Handling Edge Cases
+
+<details>
+<summary><strong>Vague/Missing Context Strategies</strong></summary>
+
 - **Semantic expansion**: Uses related chunks for context
-- **Confidence scoring**: Lower scores for ambiguous queries
+- **Confidence scoring**: Lower scores for ambiguous queries  
 - **Fallback responses**: Graceful degradation with explanations
 - **Source citation**: Always provides evidence chunks
 
-### 6. Result Relevance & Improvement Strategies
+</details>
 
-**Current relevance assessment methodology**:
-- **FAISS cosine similarity search** with 0.3 threshold for relevance filtering
-- **Multi-factor confidence calculation**:
-  - Average similarity score (60% weight)
-  - Number of sources factor (20% weight) - more sources = higher confidence
-  - Context length factor (20% weight) - longer context = better coverage
-- **Dynamic context expansion**: Retrieves 5 chunks by default, expandable up to 20
+### 6. Quality Control & Improvement Strategies
 
-**Implemented quality control mechanisms**:
-- ✅ **Threshold-based filtering**: Only chunks with >0.3 similarity are considered
-- ✅ **Post-processing pipeline**: Removes LLM artifacts like "উত্তর:" prefixes
-- ✅ **Answer length optimization**: Limits responses to 2-3 words for factual questions
-- ✅ **Memory integration**: Conversation context enhances subsequent responses
-- ✅ **Language-aware processing**: Bengali vs English pattern recognition
-- ✅ **Confidence scoring**: Weighted combination of similarity, source count, and context length
+#### Current Assessment Methodology
 
-**Evaluation-driven improvements implemented**:
-- ✅ **Groundedness evaluation**: Word overlap analysis between answer and context (75% score achieved)
-- ✅ **Relevance scoring**: Question-context term matching (93.1% relevance achieved) 
-- ✅ **Semantic similarity**: Direct embedding comparison (100% similarity on test set)
-- ✅ **Context utilization**: Efficiency metrics for context usage
-- ✅ **Bengali text optimization**: Unicode normalization and character preservation
+**FAISS Cosine Similarity Search** with multi-factor confidence calculation:
 
-**System strengths validated through testing**:
+```python
+# Confidence Calculation Formula
+confidence = (avg_similarity * 0.6) + (num_sources_factor * 0.2) + (context_length_factor * 0.2)
+
+# Parameters
+similarity_threshold = 0.3        # Relevance filtering
+max_chunks = 5                    # Default retrieval
+expandable_to = 20               # Maximum context expansion
+```
+
+#### Implemented Quality Mechanisms
+
+<table>
+<tr>
+<th>Mechanism</th>
+<th>Implementation</th>
+<th>Impact</th>
+</tr>
+<tr>
+<td><strong>Threshold Filtering</strong></td>
+<td>Only chunks with >0.3 similarity considered</td>
+<td>Relevance quality control</td>
+</tr>
+<tr>
+<td><strong>Post-Processing Pipeline</strong></td>
+<td>Removes LLM artifacts like "উত্তর:" prefixes</td>
+<td>Clean answer formatting</td>
+</tr>
+<tr>
+<td><strong>Answer Optimization</strong></td>
+<td>Limits responses to 2-3 words for factual questions</td>
+<td>Concise, precise answers</td>
+</tr>
+<tr>
+<td><strong>Memory Integration</strong></td>
+<td>Conversation context enhances responses</td>
+<td>Contextual continuity</td>
+</tr>
+<tr>
+<td><strong>Language Processing</strong></td>
+<td>Bengali vs English pattern recognition</td>
+<td>Language-appropriate responses</td>
+</tr>
+</table>
+
+#### Evaluation-Driven Improvements
+
+| Improvement | Method | Achievement |
+|:------------|:-------|:------------|
+| **Groundedness Evaluation** | Word overlap analysis between answer and context | **75%** score achieved |
+| **Relevance Scoring** | Question-context term matching | **93.1%** relevance achieved |
+| **Semantic Similarity** | Direct embedding comparison | **100%** similarity on test set |
+| **Context Utilization** | Efficiency metrics for context usage | Baseline established |
+| **Bengali Optimization** | Unicode normalization and character preservation | Enhanced accuracy |
+
+#### Validated System Strengths
+
 - **Perfect factual accuracy**: 100% correct answers on all 4 test questions
 - **Language consistency**: Automatic language detection and appropriate response
 - **Source attribution**: Every answer traceable to specific document chunks
 - **Response optimization**: Adapts to question type (factual vs descriptive)
 - **Error recovery**: Graceful fallbacks when context is insufficient
 
-**Identified limitations and ongoing challenges**:
-- **Context fragmentation**: Question-answer pairs separated across distant chunks
-- **Context utilization efficiency**: Only 20% efficiency score indicates room for improvement
-- **Long document handling**: Performance drops when relevant information spans multiple pages
-- **Complex question handling**: Works best for factual queries vs analytical questions
+#### Known Limitations & Challenges
 
-**Issue: Ollama not found**
+> **Context Fragmentation**: Question-answer pairs separated across distant chunks
+> 
+> **Context Utilization Efficiency**: 20% efficiency score indicates optimization potential
+> 
+> **Long Document Handling**: Performance drops when information spans multiple pages
+> 
+> **Complex Query Processing**: Optimized for factual queries over analytical questions
+
+---
+
+## Troubleshooting
+
+### Common Issues & Solutions
+
+<details>
+<summary><strong>Ollama Not Found</strong></summary>
+
 ```bash
 # Install from https://ollama.ai/ then:
 ollama pull aya-expanse:8b
 ```
 
-**Issue: Web interface won't load**
+</details>
+
+<details>
+<summary><strong>Web Interface Won't Load</strong></summary>
+
 ```bash
 # Make sure API is running first:
 python -m api.app
@@ -504,13 +785,18 @@ python -m api.app
 streamlit run streamlit_app.py
 ```
 
-**Issue: Port already in use**
-- API (8000): Kill existing process or change port in `api/app.py`
-- Streamlit (8501): Use `streamlit run streamlit_app.py --server.port 8502`
+</details>
 
-## 📊 System Status
+<details>
+<summary><strong>Port Already in Use</strong></summary>
 
-- **Web UI**: http://localhost:8501
-- **API Health**: http://localhost:8000/health
+- **API (8000)**: Kill existing process or change port in `api/app.py`
+- **Streamlit (8501)**: Use `streamlit run streamlit_app.py --server.port 8502`
 
-**🎯 Ready to explore HSC Bangla literature with AI!**
+</details>
+
+---
+
+
+
+**Ready to explore HSC Bangla literature with AI assistance!**

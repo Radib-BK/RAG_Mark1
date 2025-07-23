@@ -250,7 +250,7 @@ def main():
     st.markdown(
         """
         <div style='text-align: center'>
-            <p><strong>HSC Bangla RAG System</strong> | Built with ❤️ for multilingual education</p>
+            <p><strong>HSC Bangla RAG System</strong></p>
         </div>
         """, 
         unsafe_allow_html=True
