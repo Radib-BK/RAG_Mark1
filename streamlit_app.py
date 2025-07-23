@@ -181,45 +181,44 @@ def main():
             if st.button("🗑️ Clear", use_container_width=True):
                 st.session_state.question_input = ""
                 st.rerun()
+        
+        # Process question and display answer immediately in the same column (no gap)
+        if ask_button and question.strip():
+            # Quick API check before processing
+            quick_status, _ = check_api_health()
+            if quick_status in ["connection_error", "offline"]:
+                st.error("❌ Cannot connect to API server. Please start the server with: `python -m api.app`")
+            else:
+                with st.spinner("🤔 Thinking..."):
+                    start_time = time.time()
+                    result, error = ask_question(question, max_chunks, threshold, include_sources)
+                    elapsed_time = time.time() - start_time
+                
+                if error:
+                    st.error(error)
+                    # Clear any previous results
+                    if 'current_result' in st.session_state:
+                        del st.session_state.current_result
+                elif result:
+                    # Store result in session state for display in right column
+                    st.session_state.current_result = result
+                    
+                    # Display answer in left column immediately (no gap)
+                    st.success("✅ Answer Generated")
+                    st.markdown("### 💬 Answer")
+                    st.markdown(f"**{result['answer']}**")
+        
+        elif ask_button:
+            st.warning("⚠️ Please enter a question first!")
+            # Clear any previous results
+            if 'current_result' in st.session_state:
+                del st.session_state.current_result
     
     with col2:
-        st.header("� Answer Details")
+        st.header("📊 Answer Details")
         # This column will be populated with answer metadata and sources after question is asked
         if 'current_result' not in st.session_state:
             st.info("💡 Ask a question to see answer details and sources here!")
-    
-    # Process question
-    if ask_button and question.strip():
-        # Quick API check before processing
-        quick_status, _ = check_api_health()
-        if quick_status in ["connection_error", "offline"]:
-            st.error("❌ Cannot connect to API server. Please start the server with: `python -m api.app`")
-        else:
-            with st.spinner("🤔 Thinking..."):
-                start_time = time.time()
-                result, error = ask_question(question, max_chunks, threshold, include_sources)
-                elapsed_time = time.time() - start_time
-            
-            if error:
-                st.error(error)
-                # Clear any previous results
-                if 'current_result' in st.session_state:
-                    del st.session_state.current_result
-            elif result:
-                # Store result in session state for display in right column
-                st.session_state.current_result = result
-                
-                # Display answer in left column
-                st.success("✅ Answer Generated")
-                with st.container():
-                    st.markdown("### 💬 Answer")
-                    st.markdown(f"**{result['answer']}**")
-    
-    elif ask_button:
-        st.warning("⚠️ Please enter a question first!")
-        # Clear any previous results
-        if 'current_result' in st.session_state:
-            del st.session_state.current_result
     
     # Display answer details and sources in right column
     if 'current_result' in st.session_state:
@@ -272,4 +271,4 @@ def main():
     )
 
 if __name__ == "__main__":
-    main() 
+    main()

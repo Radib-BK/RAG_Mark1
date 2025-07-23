@@ -1,17 +1,15 @@
 # HSC Bangla RAG System
 
+![HSC Bangla RAG System Interface](screenshot/rag-page.png)
+
 A multilingual RAG (Retrieval-Augmented Generation) system for HSC educational content in **Bangla** and **English**. Answers questions about HSC literature with high accuracy.
 
 ## 🚀 Quick Setup (5 minutes)
 
 ### 1. Clone Repository
 ```bash
-git clone https://github.com/Radib-BK/RAG## 🚨 Troubleshooting
-
-**Issue: Ollama not found**
-```bash
-# Install from https://ollama.ai/ then:
-ollama pull aya-expanse:8b
+git clone https://github.com/Radib-BK/RAG_Mark1.git
+cd RAG_Mark1
 ```
 
 **Issue: Web interface won't load**
