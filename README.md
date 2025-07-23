@@ -257,15 +257,12 @@ curl -X POST "http://localhost:8000/ask" \
 ```bash
 curl -X POST "http://localhost:8000/ask" \
   -H "Content-Type: application/json" \
-  -d '{"question": "অনুপমের বয়স কত?"}'
+  -d '{
+    "question": "অনুপমের বয়স কত?",
+    "max_chunks": 5,
+    "threshold": 0.3
+  }'
 ```
-
-**Health Check:**
-```bash
-curl -X GET "http://localhost:8000/health"
-```
-```
-
 #### System Statistics
 - **GET** `/stats`
 - **Response**: Vector store stats, conversation count, system metrics
@@ -797,6 +794,11 @@ streamlit run streamlit_app.py
 
 ---
 
+## System Status
 
+| Component | URL | Status |
+|:----------|:----|:-------|
+| **Web UI** | http://localhost:8501 | Active |
+| **API Health** | http://localhost:8000/health | Monitoring |
 
 **Ready to explore HSC Bangla literature with AI assistance!**

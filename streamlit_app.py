@@ -183,17 +183,10 @@ def main():
                 st.rerun()
     
     with col2:
-        st.header("📈 Quick Stats")
-        stats = get_system_stats()
-        if stats:
-            # Safely get stats with defaults
-            total_vectors = stats.get('vector_store_stats', {}).get('total_vectors', 0)
-            conversations = stats.get('conversation_count', 0)
-            index_size = stats.get('vector_store_stats', {}).get('index_size_mb', 0.0)
-            
-            st.metric("Total Vectors", total_vectors)
-            st.metric("Conversations", conversations)
-            st.metric("Vector Store Size", f"{index_size:.1f} MB")
+        st.header("� Answer Details")
+        # This column will be populated with answer metadata and sources after question is asked
+        if 'current_result' not in st.session_state:
+            st.info("💡 Ask a question to see answer details and sources here!")
     
     # Process question
     if ask_button and question.strip():
@@ -209,41 +202,63 @@ def main():
             
             if error:
                 st.error(error)
+                # Clear any previous results
+                if 'current_result' in st.session_state:
+                    del st.session_state.current_result
             elif result:
-                # Display answer
-                st.success("✅ Answer Generated")
+                # Store result in session state for display in right column
+                st.session_state.current_result = result
                 
-                # Answer section
+                # Display answer in left column
+                st.success("✅ Answer Generated")
                 with st.container():
                     st.markdown("### 💬 Answer")
                     st.markdown(f"**{result['answer']}**")
-                    
-                    # Metadata
-                    col_meta1, col_meta2, col_meta3 = st.columns(3)
-                    with col_meta1:
-                        st.metric("Language", result['query_language'])
-                    with col_meta2:
-                        st.metric("Confidence", f"{result['confidence_score']:.2%}")
-                    with col_meta3:
-                        st.metric("Response Time", f"{result['response_time_ms']} ms")
-                
-                # Sources section
-                if include_sources and result.get('sources'):
-                    with st.expander("📚 Sources", expanded=False):
-                        for i, source in enumerate(result['sources']):
-                            st.markdown(f"**Source {i+1}** (Score: {source['score']:.3f})")
-                            st.markdown(f"*Page {source['metadata']['source_page']} - {source['metadata'].get('content_type', 'content')}*")
-                            st.text_area(
-                                f"Content {i+1}:", 
-                                source['content'][:500] + ("..." if len(source['content']) > 500 else ""),
-                                height=100,
-                                key=f"source_{i}",
-                                disabled=True
-                            )
-                            st.markdown("---")
     
     elif ask_button:
         st.warning("⚠️ Please enter a question first!")
+        # Clear any previous results
+        if 'current_result' in st.session_state:
+            del st.session_state.current_result
+    
+    # Display answer details and sources in right column
+    if 'current_result' in st.session_state:
+        result = st.session_state.current_result
+        
+        with col2:
+            st.markdown("### 📊 Response Metrics")
+            
+            # Metadata metrics
+            col_meta1, col_meta2 = st.columns(2)
+            with col_meta1:
+                st.metric("Language", result['query_language'])
+                st.metric("Confidence", f"{result['confidence_score']:.2%}")
+            with col_meta2:
+                st.metric("Response Time", f"{result['response_time_ms']} ms")
+                st.metric("Model", result.get('model_used', 'N/A').split(':')[0])
+            
+            # Sources section
+            if include_sources and result.get('sources'):
+                st.markdown("### 📚 Sources")
+                
+                # Show number of sources
+                st.info(f"📄 {len(result['sources'])} sources retrieved")
+                
+                # Display sources in expandable sections
+                for i, source in enumerate(result['sources']):
+                    with st.expander(f"📖 Source {i+1} (Score: {source['score']:.3f})", expanded=(i == 0)):
+                        st.markdown(f"**Page:** {source['metadata']['source_page']}")
+                        st.markdown(f"**Type:** {source['metadata'].get('content_type', 'content')}")
+                        
+                        # Show content preview
+                        content_preview = source['content'][:300] + ("..." if len(source['content']) > 300 else "")
+                        st.text_area(
+                            "Content:", 
+                            content_preview,
+                            height=120,
+                            key=f"source_content_{i}",
+                            disabled=True
+                        )
     
     # Footer
     st.markdown("---")
